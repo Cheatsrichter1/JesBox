@@ -29,10 +29,15 @@ namespace JesBox.Net
         public string playerId;
     }
 
-    public class AnswerData
+    /// <summary>
+    /// Generic per-player input. "action" says what kind of input this is;
+    /// only the fields relevant to that action are populated by the phone.
+    /// </summary>
+    public class ActionData
     {
         public string action;
-        public int choice;
+        public int choice = -1;
+        public int value;
     }
 
     public class GameIn
@@ -40,7 +45,7 @@ namespace JesBox.Net
         public string type;
         public string playerId;
         public string name;
-        public AnswerData data;
+        public ActionData data;
     }
 
     // ---- Outbound (host -> server) ----
@@ -70,6 +75,7 @@ namespace JesBox.Net
         public List<PlayerPublic> players;
     }
 
+    // Trivia quiz
     public class QuestionPayload
     {
         public string phase = "question";
@@ -84,6 +90,44 @@ namespace JesBox.Net
     {
         public string phase = "reveal";
         public int correctIndex;
+        public List<PlayerPublic> players;
+    }
+
+    // Microgames
+    public class MicrogamePayload
+    {
+        public string phase = "microgame";
+        public int index;
+        public int total;
+        public string kind;
+        public string title;
+        public string instructions;
+        public float duration;
+    }
+
+    public class MicrogameRevealPayload
+    {
+        public string phase = "microgame_reveal";
+        public string title;
+        public List<PlayerPublic> players;
+    }
+
+    // Prompt & Vote
+    public class VotePromptPayload
+    {
+        public string phase = "vote_prompt";
+        public int index;
+        public int total;
+        public string scenario;
+        public List<string> options;
+        public float timeLimit;
+    }
+
+    public class VoteRevealPayload
+    {
+        public string phase = "vote_reveal";
+        public List<int> tally;
+        public int favoriteIndex;
         public List<PlayerPublic> players;
     }
 

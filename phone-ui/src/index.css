@@ -263,3 +263,80 @@ input[type="text"]:focus {
   color: var(--gold-soft);
   font-weight: 700;
 }
+
+.tap-button {
+  width: 220px;
+  height: 220px;
+  border-radius: 50%;
+  border: none;
+  background: radial-gradient(circle at 35% 35%, var(--gold-soft), var(--gold) 60%, #b3872f 100%);
+  color: #2a1a08;
+  font-size: 32px;
+  font-weight: 800;
+  cursor: pointer;
+  box-shadow: 0 0 30px rgba(232, 199, 102, 0.5);
+}
+
+.tap-button:active {
+  transform: scale(0.94);
+}
+
+.fishers-field {
+  position: relative;
+  width: 100%;
+  max-width: 420px;
+  height: 320px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.05);
+  overflow: hidden;
+}
+
+.fishers-icon {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  border: none;
+  font-size: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.fishers-icon.good {
+  background: rgba(76, 175, 131, 0.25);
+}
+
+.fishers-icon.bad {
+  background: rgba(217, 100, 92, 0.25);
+}
+
+.vote-tally {
+  width: 100%;
+  max-width: 380px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.vote-tally-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.vote-tally-track {
+  flex: 1;
+  height: 20px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.1);
+  overflow: hidden;
+}
+
+.vote-tally-fill {
+  height: 100%;
+  background: var(--gold);
+}

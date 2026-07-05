@@ -4,6 +4,10 @@ import LobbyScreen from './components/LobbyScreen.jsx';
 import QuestionScreen from './components/QuestionScreen.jsx';
 import RevealScreen from './components/RevealScreen.jsx';
 import FinalScreen from './components/FinalScreen.jsx';
+import MicrogameScreen from './components/MicrogameScreen.jsx';
+import RoundRevealScreen from './components/RoundRevealScreen.jsx';
+import VotePromptScreen from './components/VotePromptScreen.jsx';
+import VoteRevealScreen from './components/VoteRevealScreen.jsx';
 
 function getWsUrl() {
   const proto = window.location.protocol === 'https:' ? 'wss' : 'ws';
@@ -11,7 +15,8 @@ function getWsUrl() {
 }
 
 export default function App() {
-  // 'join' | 'connecting' | 'lobby' | 'question' | 'reveal' | 'final'
+  // 'join' | 'connecting' | 'lobby' | 'question' | 'reveal' | 'microgame' |
+  // 'microgame_reveal' | 'vote_prompt' | 'vote_reveal' | 'final'
   const [screen, setScreen] = useState('join');
   const [error, setError] = useState('');
   const [playerId, setPlayerId] = useState(null);
@@ -43,7 +48,7 @@ export default function App() {
       case 'game': {
         const data = msg.data || {};
         setGame(data);
-        if (data.phase === 'question') setSelectedChoice(null);
+        if (data.phase === 'question' || data.phase === 'vote_prompt') setSelectedChoice(null);
         if (data.phase) setScreen(data.phase);
         break;
       }
@@ -75,14 +80,32 @@ export default function App() {
     };
   }, [handleMessage]);
 
+  const sendAction = useCallback((payload) => {
+    const ws = wsRef.current;
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ type: 'game', data: payload }));
+    }
+  }, []);
+
   const answer = useCallback((choiceIndex) => {
     if (selectedChoice !== null) return;
     setSelectedChoice(choiceIndex);
-    const ws = wsRef.current;
-    if (ws && ws.readyState === WebSocket.OPEN) {
-      ws.send(JSON.stringify({ type: 'game', data: { action: 'answer', choice: choiceIndex } }));
-    }
-  }, [selectedChoice]);
+    sendAction({ action: 'answer', choice: choiceIndex });
+  }, [selectedChoice, sendAction]);
+
+  const vote = useCallback((choiceIndex) => {
+    if (selectedChoice !== null) return;
+    setSelectedChoice(choiceIndex);
+    sendAction({ action: 'vote', choice: choiceIndex });
+  }, [selectedChoice, sendAction]);
+
+  const tap = useCallback(() => {
+    sendAction({ action: 'tap' });
+  }, [sendAction]);
+
+  const submitScore = useCallback((value) => {
+    sendAction({ action: 'submit_score', value });
+  }, [sendAction]);
 
   switch (screen) {
     case 'connecting':
@@ -95,15 +118,17 @@ export default function App() {
     case 'lobby':
       return <LobbyScreen roomCode={roomCode} game={game} />;
     case 'question':
-      return (
-        <QuestionScreen
-          game={game}
-          selectedChoice={selectedChoice}
-          onAnswer={answer}
-        />
-      );
+      return <QuestionScreen game={game} selectedChoice={selectedChoice} onAnswer={answer} />;
     case 'reveal':
       return <RevealScreen game={game} playerId={playerId} selectedChoice={selectedChoice} />;
+    case 'microgame':
+      return <MicrogameScreen game={game} onTap={tap} onSubmitScore={submitScore} />;
+    case 'microgame_reveal':
+      return <RoundRevealScreen game={game} playerId={playerId} />;
+    case 'vote_prompt':
+      return <VotePromptScreen game={game} selectedChoice={selectedChoice} onVote={vote} />;
+    case 'vote_reveal':
+      return <VoteRevealScreen game={game} playerId={playerId} />;
     case 'final':
       return <FinalScreen game={game} playerId={playerId} />;
     case 'join':

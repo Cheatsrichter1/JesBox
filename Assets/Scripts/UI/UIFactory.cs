@@ -14,6 +14,8 @@ namespace JesBox.UI
         public static readonly Color Gold = new Color32(0xE8, 0xC7, 0x66, 0xFF);
         public static readonly Color Cream = new Color32(0xFB, 0xF6, 0xEA, 0xFF);
         public static readonly Color PanelTint = new Color(1f, 1f, 1f, 0.06f);
+        public static readonly Color ChipUnselected = new Color(1f, 1f, 1f, 0.12f);
+        public static readonly Color ChipTextDark = new Color32(0x2A, 0x1A, 0x08, 0xFF);
 
         private static Font _font;
         private static Font BuiltinFont => _font != null ? _font : (_font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf"));
@@ -77,8 +79,51 @@ namespace JesBox.UI
             rt.sizeDelta = sizeDelta;
             go.GetComponent<Image>().color = Gold;
 
-            CreateText(rt, label, 28, new Color32(0x2A, 0x1A, 0x08, 0xFF), TextAnchor.MiddleCenter, Vector2.zero, sizeDelta, FontStyle.Bold);
+            CreateText(rt, label, 28, ChipTextDark, TextAnchor.MiddleCenter, Vector2.zero, sizeDelta, FontStyle.Bold);
             return go.GetComponent<Button>();
+        }
+
+        /// <summary>An invisible, positionless RectTransform used purely to group
+        /// child controls so a whole cluster can be shown/hidden as one unit.</summary>
+        public static RectTransform CreateGroup(Transform parent, string name)
+        {
+            var go = new GameObject(name, typeof(RectTransform));
+            var rt = go.GetComponent<RectTransform>();
+            rt.SetParent(parent, false);
+            rt.anchorMin = new Vector2(0.5f, 0.5f);
+            rt.anchorMax = new Vector2(0.5f, 0.5f);
+            rt.anchoredPosition = Vector2.zero;
+            rt.sizeDelta = Vector2.zero;
+            return rt;
+        }
+
+        /// <summary>A labeled -/value/+ stepper. Calls onChange immediately with the
+        /// clamped initial value, then again on every click.</summary>
+        public static Text CreateStepper(Transform parent, string label, Vector2 anchoredPos,
+            int min, int max, int step, int initial, System.Action<int> onChange, string suffix = "")
+        {
+            var container = CreateGroup(parent, $"Stepper_{label}");
+            container.anchoredPosition = anchoredPos;
+
+            CreateText(container, label, 18, Gold, TextAnchor.MiddleCenter, new Vector2(0, 34), new Vector2(400, 26));
+            var valueText = CreateText(container, "", 34, Cream, TextAnchor.MiddleCenter, new Vector2(0, -14), new Vector2(140, 50), FontStyle.Bold);
+            var minusBtn = CreateButton(container, "-", new Vector2(-150, -14), new Vector2(70, 60));
+            var plusBtn = CreateButton(container, "+", new Vector2(150, -14), new Vector2(70, 60));
+
+            int value = Mathf.Clamp(initial, min, max);
+
+            void Apply(int v)
+            {
+                value = Mathf.Clamp(v, min, max);
+                valueText.text = value + suffix;
+                onChange(value);
+            }
+
+            minusBtn.onClick.AddListener(() => Apply(value - step));
+            plusBtn.onClick.AddListener(() => Apply(value + step));
+            Apply(value);
+
+            return valueText;
         }
     }
 }
