@@ -71,18 +71,31 @@ You need 3 things running at once while developing:
 
 ## Deploying to your server
 
-This assumes a server where you can run a persistent Node.js process (a VPS, Docker host, etc.).
+This is git-based: push to a remote, then pull + build + restart on the server. This repo is already a git repo; you just need to add a remote (GitHub/GitLab/etc. or a bare repo on the server itself) and push to it.
 
-1. Copy the `server/` folder and the built `phone-ui/dist` folder to the server (keep the relative layout: `.../server/index.js` and `.../phone-ui/dist/...` as siblings, matching this repo).
-2. On the server:
-   ```
-   cd server
-   npm install --omit=dev
-   PORT=8080 npm start
-   ```
-   Keep it running with a process manager, e.g. `pm2 start index.js --name jesbox` or a systemd unit.
-3. Put a reverse proxy (nginx/Caddy) in front with TLS, forwarding both normal HTTP requests and the `/ws` WebSocket upgrade to port 8080. Caddy does this with zero config for WebSockets; for nginx you need `proxy_set_header Upgrade $http_upgrade;` and `Connection "upgrade"` on the `/ws` location.
-4. Point players at `https://your-domain/` — that's the phone join page. Point the Unity build's **Server Url** field at `wss://your-domain/ws`.
+**One-time server setup** (assumes a server where you can run a persistent Node.js process — a VPS, Docker host, etc.):
+
+```
+npm install -g pm2                     # process manager that keeps the server alive/restarted
+git clone <your-remote-url> jesbox
+cd jesbox/server
+npm install --omit=dev
+pm2 start ecosystem.config.js
+cd ../phone-ui
+npm install
+npm run build                          # produces phone-ui/dist, which the server serves
+pm2 save                               # so pm2 restarts jesbox on server reboot
+```
+
+Then put a reverse proxy (nginx/Caddy) in front with TLS, forwarding both normal HTTP requests and the `/ws` WebSocket upgrade to port 8080. Caddy does this with zero config for WebSockets; for nginx you need `proxy_set_header Upgrade $http_upgrade;` and `Connection "upgrade"` on the `/ws` location. Point players at `https://your-domain/` — that's the phone join page. Point the Unity build's **Server Url** field at `wss://your-domain/ws`.
+
+**Every update after that**: edit `scripts/deploy.sh` once to set `SERVER_HOST` and `SERVER_PATH` (the path you cloned into above, e.g. `/home/user/jesbox`), then just run:
+
+```
+./scripts/deploy.sh
+```
+
+It SSHs in, `git pull`s, reinstalls dependencies, rebuilds the phone-ui, and restarts the `jesbox` pm2 process. Commit and push your changes first — the script deploys whatever is on the remote's default branch.
 
 ## Known limitations (v1)
 
