@@ -8,7 +8,7 @@ A Jackbox/Kahoot-style party game with a Christian trivia theme:
 The host (TV/Unity) picks one of three game modes from the lobby screen before hitting Start:
 
 - **Trivia Quiz** — Bible trivia buzzer round. Selectable difficulty (Easy/Medium/Hard, ~8 questions each), question count (3–10), and per-question time limit (5–30s), all adjustable with +/- steppers in the lobby. Speed-bonus scoring, live scoreboard.
-- **Microgames** — WarioWare-style rapid-fire rounds (2–8 rounds, picked at random from the bank): *Manna Rain* (mash-to-tap race, most taps wins) and *Fishers of Men* (tap the fish, avoid the tridents, client-side reflex game that submits a final score).
+- **Microgames** — WarioWare-style rapid-fire rounds (2–8 rounds, picked at random from the bank): *Manna Rain* (mash-to-tap race), *Fishers of Men* (tap the fish, avoid the tridents), *Joyful Noise* (shake your phone like a tambourine, using the accelerometer with a tap fallback), *Walk on Water* (tilt or drag to dodge falling waves), *Loaves and Fishes* (tap when the sweeping marker hits the target zone), and *Parting the Waters* (swipe alternating left/right). All but Manna Rain and Joyful Noise run their reflex gameplay client-side and submit a final score.
 - **Prompt & Vote** — Quiplash-style multiple-choice scenario voting (2–8 prompts). Everyone votes for one of 4 preset responses to a scenario; whoever matches the crowd favorite gets the bonus, everyone else gets a small participation score.
 
 ## Repo layout
@@ -27,7 +27,7 @@ Everything is plain JSON over one WebSocket per client, relayed by the server:
 
 - Unity connects first and sends `{"type":"create_room"}` → server replies with a room code.
 - Each phone connects and sends `{"type":"join","roomCode":"ABCD","name":"..."}` → server assigns a `playerId` and tells the host.
-- From then on, both sides just send `{"type":"game","data":{...}}`. The server doesn't understand `data` at all — it just relays host→all-players or player→host. All game rules (questions, timing, scoring) live in Unity; the phones are dumb display+input surfaces (except Fishers of Men, whose reflex gameplay runs client-side and reports a final score).
+- From then on, both sides just send `{"type":"game","data":{...}}`. The server doesn't understand `data` at all — it just relays host→all-players or player→host. All game rules (questions, timing, scoring) live in Unity; the phones are dumb display+input surfaces (except the reflex microgames — Fishers of Men, Walk on Water, Loaves and Fishes, Parting the Waters — whose gameplay runs client-side and reports a final score).
 
 See `server/index.js` for the exact relay rules and `Assets/Scripts/Net/Messages.cs` for every payload shape, keyed by `phase`: `lobby`, `question`/`reveal` (trivia), `microgame`/`microgame_reveal` (microgames), `vote_prompt`/`vote_reveal` (prompt & vote), and `final`. Phone→host input is a single generic shape, `{"action": "answer"|"vote"|"tap"|"submit_score", "choice": n, "value": n}`.
 
@@ -170,6 +170,6 @@ It SSHs in, `git pull`s, reinstalls dependencies, rebuilds the phone-ui, and res
 
 - No reconnect handling — if a phone loses the WebSocket mid-game it has to rejoin as a new player.
 - Room codes and all state live in memory only; restarting the server clears every room.
-- Microgames only has 2 rounds defined (Manna Rain, Fishers of Men); requesting more rounds than that just repeats them. The relay protocol is generic (`type:"game"`), so adding more just means a new `MicrogameKind`, a new `data.phase` payload, and a matching React screen — no server changes needed.
+- Microgames now has 6 rounds defined; requesting more rounds than that just repeats them. The relay protocol is generic (`type:"game"`), so adding more just means a new `MicrogameKind` in `Microgames.cs`, and a matching React component keyed by that kind in `MicrogameScreen.jsx` — no server changes needed.
 - No QR code on the lobby screen yet, just the room code + URL as text.
 - Game mode, difficulty, and round counts reset to their defaults each time Unity restarts (not persisted to disk).

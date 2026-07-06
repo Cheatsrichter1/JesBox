@@ -4,8 +4,8 @@
 #   ./scripts/deploy.sh
 set -euo pipefail
 
-SERVER_HOST="user@n8n.flow36.de"              # <-- edit me: replace "user" with your actual SSH username
-SERVER_PATH="/home/user/jesbox"               # <-- edit me: path to the git checkout on the server
+SERVER_HOST="root@46.62.163.219"
+SERVER_PATH="/root/jesbox"
 
 ssh "$SERVER_HOST" bash -s <<REMOTE
 set -euo pipefail

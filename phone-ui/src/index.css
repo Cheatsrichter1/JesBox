@@ -314,6 +314,96 @@ input[type="text"]:focus {
   background: rgba(217, 100, 92, 0.25);
 }
 
+.tap-button.flash-good {
+  background: radial-gradient(circle at 35% 35%, #cdeede, var(--good) 60%, #2f6b52 100%);
+}
+
+.tap-button.flash-bad {
+  background: radial-gradient(circle at 35% 35%, #f3cfcb, var(--bad) 60%, #8a3a34 100%);
+}
+
+.water-field {
+  position: relative;
+  width: 100%;
+  max-width: 420px;
+  height: 320px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.05);
+  overflow: hidden;
+  touch-action: none;
+}
+
+.water-wave {
+  position: absolute;
+  top: 0;
+  transform: translateX(-50%);
+  font-size: 34px;
+  animation: wave-fall 1.1s linear forwards;
+}
+
+@keyframes wave-fall {
+  from { top: 0%; }
+  to { top: 100%; }
+}
+
+.water-player {
+  position: absolute;
+  bottom: 8px;
+  transform: translateX(-50%);
+  font-size: 40px;
+  transition: left 0.08s linear;
+}
+
+.loaves-track {
+  position: relative;
+  width: 100%;
+  max-width: 340px;
+  height: 48px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+}
+
+.loaves-zone {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  background: rgba(76, 175, 131, 0.35);
+}
+
+.loaves-marker {
+  position: absolute;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  font-size: 30px;
+}
+
+.parting-field {
+  position: relative;
+  width: 100%;
+  max-width: 420px;
+  height: 220px;
+  border-radius: 16px;
+  overflow: hidden;
+  display: flex;
+  touch-action: none;
+}
+
+.parting-water {
+  height: 100%;
+  background: linear-gradient(180deg, rgba(76, 156, 175, 0.55), rgba(76, 156, 175, 0.25));
+  transition: width 0.15s ease;
+}
+
+.parting-path {
+  height: 100%;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  font-size: 34px;
+  transition: width 0.15s ease;
+}
+
 .vote-tally {
   width: 100%;
   max-width: 380px;

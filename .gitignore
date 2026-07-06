@@ -27,6 +27,11 @@
 sysinfo.txt
 crashlytics-build.properties
 
+# Plastic SCM / Unity Version Control workspace (auto-created by the Editor,
+# unrelated to this project's git-based workflow)
+.plastic/
+ignore.conf
+
 # ---- Node / web (server + phone-ui) ----
 node_modules/
 npm-debug.log*

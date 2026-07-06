@@ -347,7 +347,7 @@ namespace JesBox.Game
 
             int[] rankPoints = { 500, 350, 250, 150 };
             var ranked = _players.Keys
-                .Select(id => new { id, raw = RawMicrogameScore(def.Kind, id) })
+                .Select(id => new { id, raw = RawMicrogameScore(def, id) })
                 .OrderByDescending(x => x.raw)
                 .ToList();
 
@@ -366,9 +366,9 @@ namespace JesBox.Game
             yield return new WaitForSeconds(revealDuration);
         }
 
-        private int RawMicrogameScore(MicrogameKind kind, string playerId)
+        private int RawMicrogameScore(MicrogameDef def, string playerId)
         {
-            if (kind == MicrogameKind.MannaRain)
+            if (def.UsesTapCounting)
             {
                 _tapCounts.TryGetValue(playerId, out var taps);
                 return taps;
