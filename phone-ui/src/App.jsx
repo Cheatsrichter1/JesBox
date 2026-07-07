@@ -117,6 +117,10 @@ export default function App() {
     sendAction({ action: 'fire' });
   }, [sendAction]);
 
+  const shake = useCallback(() => {
+    sendAction({ action: 'shake' });
+  }, [sendAction]);
+
   switch (screen) {
     case 'connecting':
       return (
@@ -140,7 +144,7 @@ export default function App() {
     case 'vote_reveal':
       return <VoteRevealScreen game={game} playerId={playerId} />;
     case 'solo_turn':
-      return <SoloTurnScreen game={game} playerId={playerId} onMove={move} onFire={fire} />;
+      return <SoloTurnScreen game={game} playerId={playerId} onMove={move} onFire={fire} onShake={shake} />;
     case 'solo_reveal':
       return <RoundRevealScreen game={game} playerId={playerId} />;
     case 'final':

@@ -58,33 +58,52 @@ namespace JesBox.Game
         private int _votePromptCount = 5;
         private int _soloTurns = 6;
 
-        // Chosen One (solo spotlight) live state
+        // Chosen One (solo spotlight) live state — every game here is a single
+        // quick pass/fail challenge (WarioWare style), not a scored timer.
         private class SoloObstacle
         {
             public RectTransform Rt;
             public int Lane;
-            public bool Resolved;
         }
 
         private string _currentChosenId;
         private SoloGameKind _currentSoloKind;
+        private bool _soloRoundOver;
+        private bool _soloWon;
+
+        // Fiery Furnace Dash
         private int _soloLane;
         private int _soloHits;
         private int _soloDodged;
         private float _soloSpawnTimer;
-        private float _soloGoliathTime;
-        private float _soloGoliathX;
-        private float _soloLastFireTime = -999f;
         private RectTransform _soloPlayerMarker;
-        private RectTransform _soloGoliathMarker;
         private readonly List<SoloObstacle> _soloObstacles = new List<SoloObstacle>();
-        private const int SoloMaxHits = 3;
+        private const int SoloDodgeTarget = 3;
         private const float SoloLaneOffset = 280f;
         private const float SoloPlayerY = -180f;
         private const float SoloSpawnY = 180f;
-        private const float SoloGoliathAmplitude = 320f;
-        private const float SoloGoliathHitTolerance = 70f;
-        private const float SoloFireCooldown = 0.35f;
+        private const float SoloFurnaceFallSpeed = 340f;
+        private const float SoloFurnaceSpawnGap = 0.25f;
+
+        // David's Slingshot / Loaves and Fishes Multiply (one-shot moving-target games)
+        private float _soloTargetTime;
+        private float _soloTargetX;
+        private RectTransform _soloTargetMarker;
+        private const float SoloTargetAmplitude = 320f;
+        private const float SoloTargetHitTolerance = 70f;
+
+        // Joyful Prayer
+        private int _soloPrayerCount;
+        private Image _soloPrayerMeterFill;
+        private const int SoloPrayerTarget = 8;
+
+        // Parting the Sea
+        private int _soloPartingCount;
+        private int _soloPartingLastDir;
+        private Image _soloPartingMeterFill;
+        private const int SoloPartingTarget = 5;
+
+        private const float SoloRevealDuration = 2.2f;
 
         // UI references
         private RectTransform _lobbyPanel, _questionPanel, _microgamePanel, _revealPanel, _finalPanel, _soloPanel;
@@ -204,6 +223,9 @@ namespace JesBox.Game
                             break;
                         case "fire":
                             if (game.playerId == _currentChosenId) HandleSoloFire();
+                            break;
+                        case "shake":
+                            if (game.playerId == _currentChosenId) HandleSoloShake();
                             break;
                     }
                     break;
@@ -546,13 +568,17 @@ namespace JesBox.Game
             _currentChosenId = chosenId;
             _currentSoloKind = def.Kind;
             _currentRemaining = def.Duration;
+            _soloRoundOver = false;
+            _soloWon = false;
             _soloLane = 1;
             _soloHits = 0;
             _soloDodged = 0;
             _soloSpawnTimer = 0f;
-            _soloGoliathTime = 0f;
-            _soloGoliathX = 0f;
-            _soloLastFireTime = -999f;
+            _soloTargetTime = 0f;
+            _soloTargetX = 0f;
+            _soloPrayerCount = 0;
+            _soloPartingCount = 0;
+            _soloPartingLastDir = 0;
 
             string chosenName = _players[chosenId].Name;
 
@@ -575,14 +601,20 @@ namespace JesBox.Game
             SetupSoloStage(def.Kind);
 
             float elapsed = 0f;
-            bool earlyEnd = false;
-            while (elapsed < def.Duration && !earlyEnd)
+            while (elapsed < def.Duration && !_soloRoundOver)
             {
                 elapsed += Time.deltaTime;
                 _currentRemaining = Mathf.Max(0f, def.Duration - elapsed);
                 UpdateSoloTimerUI(def.Duration);
-                earlyEnd = TickSoloGame(def.Kind, Time.deltaTime);
+                TickSoloGame(def.Kind, Time.deltaTime);
                 yield return null;
+            }
+
+            // Ran out of time without a hit — Fiery Furnace Dash counts that as
+            // a survival. Every other game requires an explicit action to win.
+            if (!_soloRoundOver && def.Kind == SoloGameKind.FieryFurnaceDash && _soloHits == 0)
+            {
+                _soloWon = true;
             }
 
             ClearSoloStage();
@@ -594,7 +626,7 @@ namespace JesBox.Game
                 yield break;
             }
 
-            int points = ComputeSoloScore(def.Kind);
+            int points = _soloWon ? 500 : 0;
             var deltas = new Dictionary<string, int>();
             foreach (var kv in _players) deltas[kv.Key] = 0;
             deltas[chosenId] = points;
@@ -605,56 +637,53 @@ namespace JesBox.Game
             _net.SendJson(new GameOut<SoloRevealPayload> { data = new SoloRevealPayload { title = resultText, players = publicList } });
             ShowRevealUI(resultText, publicList);
 
-            yield return new WaitForSeconds(revealDuration);
+            yield return new WaitForSeconds(SoloRevealDuration);
         }
 
-        private bool TickSoloGame(SoloGameKind kind, float dt)
+        private void TickSoloGame(SoloGameKind kind, float dt)
         {
-            if (kind == SoloGameKind.FieryFurnaceDash) return TickFurnaceDash(dt);
-            if (kind == SoloGameKind.DavidsSlingshot) { TickSlingshot(dt); return false; }
-            return false;
+            if (kind == SoloGameKind.FieryFurnaceDash) TickFurnaceDash(dt);
+            else if (kind == SoloGameKind.DavidsSlingshot || kind == SoloGameKind.LoavesAndFishesMultiply) TickMovingTarget(dt);
         }
 
-        private bool TickFurnaceDash(float dt)
+        private void TickFurnaceDash(float dt)
         {
-            const float fallSpeed = 220f;
-            const float spawnInterval = 0.85f;
-
-            _soloSpawnTimer -= dt;
-            if (_soloSpawnTimer <= 0f)
+            if (_soloObstacles.Count == 0)
             {
-                _soloSpawnTimer = spawnInterval;
-                SpawnFurnaceObstacle();
+                _soloSpawnTimer -= dt;
+                if (_soloSpawnTimer <= 0f) SpawnFurnaceObstacle();
+                return;
             }
 
-            for (int i = _soloObstacles.Count - 1; i >= 0; i--)
+            var obstacle = _soloObstacles[0];
+            var pos = obstacle.Rt.anchoredPosition;
+            pos.y -= SoloFurnaceFallSpeed * dt;
+            obstacle.Rt.anchoredPosition = pos;
+
+            if (pos.y <= SoloPlayerY + 20f && pos.y > SoloPlayerY - 40f && obstacle.Lane == _soloLane)
             {
-                var obstacle = _soloObstacles[i];
-                if (obstacle.Resolved) { _soloObstacles.RemoveAt(i); continue; }
-
-                var pos = obstacle.Rt.anchoredPosition;
-                pos.y -= fallSpeed * dt;
-                obstacle.Rt.anchoredPosition = pos;
-
-                if (pos.y <= SoloPlayerY + 20f && pos.y > SoloPlayerY - 40f && obstacle.Lane == _soloLane)
+                Destroy(obstacle.Rt.gameObject);
+                _soloObstacles.Clear();
+                _soloHits++;
+                FlashSoloFeedback(false);
+                _soloRoundOver = true;
+                _soloWon = false;
+            }
+            else if (pos.y < SoloPlayerY - 60f)
+            {
+                Destroy(obstacle.Rt.gameObject);
+                _soloObstacles.Clear();
+                _soloDodged++;
+                if (_soloDodged >= SoloDodgeTarget)
                 {
-                    obstacle.Resolved = true;
-                    _soloHits++;
-                    FlashSoloFeedback(false);
-                    Destroy(obstacle.Rt.gameObject);
-                    _soloObstacles.RemoveAt(i);
-                    if (_soloHits >= SoloMaxHits) return true;
+                    _soloRoundOver = true;
+                    _soloWon = true;
                 }
-                else if (pos.y < SoloPlayerY - 60f)
+                else
                 {
-                    obstacle.Resolved = true;
-                    _soloDodged++;
-                    Destroy(obstacle.Rt.gameObject);
-                    _soloObstacles.RemoveAt(i);
+                    _soloSpawnTimer = SoloFurnaceSpawnGap;
                 }
             }
-
-            return false;
         }
 
         private void SpawnFurnaceObstacle()
@@ -669,59 +698,89 @@ namespace JesBox.Game
             rt.anchoredPosition = new Vector2((lane - 1) * SoloLaneOffset, SoloSpawnY);
             go.GetComponent<Image>().color = new Color(0.85f, 0.35f, 0.15f, 0.9f);
 
-            _soloObstacles.Add(new SoloObstacle { Rt = rt, Lane = lane, Resolved = false });
+            _soloObstacles.Add(new SoloObstacle { Rt = rt, Lane = lane });
         }
 
-        private void TickSlingshot(float dt)
+        private void TickMovingTarget(float dt)
         {
-            const float baseSpeed = 1.4f;
-            _soloGoliathTime += dt;
-            float speed = baseSpeed + _soloGoliathTime * 0.05f;
-            _soloGoliathX = SoloGoliathAmplitude * Mathf.Sin(_soloGoliathTime * speed);
-            if (_soloGoliathMarker != null)
-                _soloGoliathMarker.anchoredPosition = new Vector2(_soloGoliathX, 100f);
+            const float speed = 2.4f;
+            _soloTargetTime += dt;
+            _soloTargetX = SoloTargetAmplitude * Mathf.Sin(_soloTargetTime * speed);
+            if (_soloTargetMarker != null)
+                _soloTargetMarker.anchoredPosition = new Vector2(_soloTargetX, 100f);
         }
 
         private void HandleSoloMove(int direction)
         {
-            if (direction == 0 || _currentSoloKind != SoloGameKind.FieryFurnaceDash) return;
-            _soloLane = Mathf.Clamp(_soloLane + (direction > 0 ? 1 : -1), 0, 2);
-            UpdateSoloPlayerMarkerPosition();
+            if (direction == 0 || _soloRoundOver) return;
+
+            if (_currentSoloKind == SoloGameKind.FieryFurnaceDash)
+            {
+                _soloLane = Mathf.Clamp(_soloLane + (direction > 0 ? 1 : -1), 0, 2);
+                UpdateSoloPlayerMarkerPosition();
+            }
+            else if (_currentSoloKind == SoloGameKind.PartingTheSea)
+            {
+                int dir = direction > 0 ? 1 : -1;
+                if (dir == _soloPartingLastDir) return; // must alternate direction each tap
+                _soloPartingLastDir = dir;
+                _soloPartingCount++;
+                UpdateSoloMeterUI(_soloPartingMeterFill, _soloPartingCount / (float)SoloPartingTarget);
+                if (_soloPartingCount >= SoloPartingTarget)
+                {
+                    _soloRoundOver = true;
+                    _soloWon = true;
+                }
+            }
         }
 
         private void HandleSoloFire()
         {
-            if (_currentSoloKind != SoloGameKind.DavidsSlingshot) return;
-            if (Time.time - _soloLastFireTime < SoloFireCooldown) return;
-            _soloLastFireTime = Time.time;
+            if (_soloRoundOver) return;
+            if (_currentSoloKind != SoloGameKind.DavidsSlingshot && _currentSoloKind != SoloGameKind.LoavesAndFishesMultiply) return;
 
-            bool hit = Mathf.Abs(_soloGoliathX) <= SoloGoliathHitTolerance;
-            if (hit) _soloHits++;
+            // One shot only — whatever happens here decides the round.
+            bool hit = Mathf.Abs(_soloTargetX) <= SoloTargetHitTolerance;
+            _soloRoundOver = true;
+            _soloWon = hit;
             FlashSoloFeedback(hit);
         }
 
-        private int ComputeSoloScore(SoloGameKind kind)
+        private void HandleSoloShake()
         {
-            if (kind == SoloGameKind.FieryFurnaceDash)
+            if (_soloRoundOver || _currentSoloKind != SoloGameKind.JoyfulPrayer) return;
+            _soloPrayerCount++;
+            UpdateSoloMeterUI(_soloPrayerMeterFill, _soloPrayerCount / (float)SoloPrayerTarget);
+            if (_soloPrayerCount >= SoloPrayerTarget)
             {
-                int points = _soloDodged * 40;
-                if (_soloHits == 0 && _soloDodged > 0) points += 200;
-                return points;
+                _soloRoundOver = true;
+                _soloWon = true;
             }
-
-            return _soloHits * 150;
         }
 
         private string BuildSoloResultText(SoloGameKind kind, string chosenName, int points)
         {
-            if (kind == SoloGameKind.FieryFurnaceDash)
+            string outcome;
+            switch (kind)
             {
-                return _soloHits >= SoloMaxHits
-                    ? $"{chosenName} dodged {_soloDodged} flames before getting caught! (+{points})"
-                    : $"{chosenName} survived the furnace, dodging {_soloDodged} flames! (+{points})";
+                case SoloGameKind.FieryFurnaceDash:
+                    outcome = _soloWon ? "dodged every flame" : "got caught in the flames";
+                    break;
+                case SoloGameKind.DavidsSlingshot:
+                    outcome = _soloWon ? "struck Goliath down with one shot" : "missed their only shot";
+                    break;
+                case SoloGameKind.JoyfulPrayer:
+                    outcome = _soloWon ? "filled the room with joyful prayer" : "ran out of time praying";
+                    break;
+                case SoloGameKind.LoavesAndFishesMultiply:
+                    outcome = _soloWon ? "multiplied the loaves and fishes" : "fumbled the miracle";
+                    break;
+                default:
+                    outcome = _soloWon ? "parted the sea" : "couldn't part the waters in time";
+                    break;
             }
 
-            return $"{chosenName} struck Goliath {_soloHits} time{(_soloHits == 1 ? "" : "s")}! (+{points})";
+            return _soloWon ? $"{chosenName} {outcome}! (+{points})" : $"{chosenName} {outcome}. No points this time.";
         }
 
         // ---- UI: build ----
@@ -1042,6 +1101,19 @@ namespace JesBox.Game
 
             if (kind == SoloGameKind.FieryFurnaceDash)
             {
+                for (int lane = -1; lane <= 1; lane++)
+                {
+                    if (lane == 0) continue; // no divider needed through the middle lane's own center
+                    var lineGo = new GameObject("LaneDivider", typeof(Image));
+                    var lineRt = lineGo.GetComponent<RectTransform>();
+                    lineRt.SetParent(_soloStage, false);
+                    lineRt.anchorMin = new Vector2(0.5f, 0.5f);
+                    lineRt.anchorMax = new Vector2(0.5f, 0.5f);
+                    lineRt.anchoredPosition = new Vector2(lane * SoloLaneOffset * 0.5f, 0);
+                    lineRt.sizeDelta = new Vector2(4, 400);
+                    lineGo.GetComponent<Image>().color = new Color(1f, 1f, 1f, 0.12f);
+                }
+
                 var go = new GameObject("Player", typeof(Image));
                 _soloPlayerMarker = go.GetComponent<RectTransform>();
                 _soloPlayerMarker.SetParent(_soloStage, false);
@@ -1051,26 +1123,69 @@ namespace JesBox.Game
                 go.GetComponent<Image>().color = UIFactory.Gold;
                 UpdateSoloPlayerMarkerPosition();
             }
-            else if (kind == SoloGameKind.DavidsSlingshot)
+            else if (kind == SoloGameKind.DavidsSlingshot || kind == SoloGameKind.LoavesAndFishesMultiply)
             {
+                bool isSlingshot = kind == SoloGameKind.DavidsSlingshot;
+
                 var zoneGo = new GameObject("TargetZone", typeof(Image));
                 var zoneRt = zoneGo.GetComponent<RectTransform>();
                 zoneRt.SetParent(_soloStage, false);
                 zoneRt.anchorMin = new Vector2(0.5f, 0.5f);
                 zoneRt.anchorMax = new Vector2(0.5f, 0.5f);
                 zoneRt.anchoredPosition = new Vector2(0, 100);
-                zoneRt.sizeDelta = new Vector2(SoloGoliathHitTolerance * 2, 100);
+                zoneRt.sizeDelta = new Vector2(SoloTargetHitTolerance * 2, 140);
                 zoneGo.GetComponent<Image>().color = new Color(0.9f, 0.85f, 0.4f, 0.25f);
 
-                var goliathGo = new GameObject("Goliath", typeof(Image));
-                _soloGoliathMarker = goliathGo.GetComponent<RectTransform>();
-                _soloGoliathMarker.SetParent(_soloStage, false);
-                _soloGoliathMarker.anchorMin = new Vector2(0.5f, 0.5f);
-                _soloGoliathMarker.anchorMax = new Vector2(0.5f, 0.5f);
-                _soloGoliathMarker.anchoredPosition = new Vector2(0, 100);
-                _soloGoliathMarker.sizeDelta = new Vector2(90, 90);
-                goliathGo.GetComponent<Image>().color = new Color(0.55f, 0.2f, 0.2f, 0.95f);
+                var markerGo = new GameObject(isSlingshot ? "Goliath" : "Basket", typeof(Image));
+                _soloTargetMarker = markerGo.GetComponent<RectTransform>();
+                _soloTargetMarker.SetParent(_soloStage, false);
+                _soloTargetMarker.anchorMin = new Vector2(0.5f, 0.5f);
+                _soloTargetMarker.anchorMax = new Vector2(0.5f, 0.5f);
+                _soloTargetMarker.anchoredPosition = new Vector2(0, 100);
+                _soloTargetMarker.sizeDelta = new Vector2(90, 90);
+                markerGo.GetComponent<Image>().color = isSlingshot
+                    ? new Color(0.55f, 0.2f, 0.2f, 0.95f)
+                    : new Color(0.85f, 0.65f, 0.25f, 0.95f);
             }
+            else if (kind == SoloGameKind.JoyfulPrayer)
+            {
+                _soloPrayerMeterFill = BuildSoloMeterBar(new Color(0.75f, 0.55f, 0.9f, 0.9f));
+            }
+            else if (kind == SoloGameKind.PartingTheSea)
+            {
+                _soloPartingMeterFill = BuildSoloMeterBar(new Color(0.35f, 0.65f, 0.8f, 0.9f));
+            }
+        }
+
+        private Image BuildSoloMeterBar(Color fillColor)
+        {
+            var bgGo = new GameObject("MeterBg", typeof(Image));
+            var bgRt = bgGo.GetComponent<RectTransform>();
+            bgRt.SetParent(_soloStage, false);
+            bgRt.anchorMin = new Vector2(0.5f, 0.5f);
+            bgRt.anchorMax = new Vector2(0.5f, 0.5f);
+            bgRt.anchoredPosition = Vector2.zero;
+            bgRt.sizeDelta = new Vector2(600, 60);
+            bgGo.GetComponent<Image>().color = new Color(1f, 1f, 1f, 0.12f);
+
+            var fillGo = new GameObject("MeterFill", typeof(Image));
+            var fillRt = fillGo.GetComponent<RectTransform>();
+            fillRt.SetParent(bgRt, false);
+            fillRt.anchorMin = Vector2.zero;
+            fillRt.anchorMax = Vector2.one;
+            fillRt.offsetMin = Vector2.zero;
+            fillRt.offsetMax = Vector2.zero;
+            var fillImg = fillGo.GetComponent<Image>();
+            fillImg.color = fillColor;
+            fillImg.type = Image.Type.Filled;
+            fillImg.fillMethod = Image.FillMethod.Horizontal;
+            fillImg.fillAmount = 0f;
+            return fillImg;
+        }
+
+        private static void UpdateSoloMeterUI(Image meterFill, float fraction)
+        {
+            if (meterFill != null) meterFill.fillAmount = Mathf.Clamp01(fraction);
         }
 
         private void UpdateSoloPlayerMarkerPosition()
@@ -1087,7 +1202,9 @@ namespace JesBox.Game
             }
             _soloObstacles.Clear();
             _soloPlayerMarker = null;
-            _soloGoliathMarker = null;
+            _soloTargetMarker = null;
+            _soloPrayerMeterFill = null;
+            _soloPartingMeterFill = null;
 
             if (_soloStage == null) return;
             for (int i = _soloStage.childCount - 1; i >= 0; i--)
@@ -1098,9 +1215,8 @@ namespace JesBox.Game
 
         private void FlashSoloFeedback(bool success)
         {
-            Image target = _currentSoloKind == SoloGameKind.FieryFurnaceDash
-                ? _soloPlayerMarker != null ? _soloPlayerMarker.GetComponent<Image>() : null
-                : _soloGoliathMarker != null ? _soloGoliathMarker.GetComponent<Image>() : null;
+            RectTransform markerRt = _currentSoloKind == SoloGameKind.FieryFurnaceDash ? _soloPlayerMarker : _soloTargetMarker;
+            Image target = markerRt != null ? markerRt.GetComponent<Image>() : null;
             if (target != null) StartCoroutine(FlashRoutine(target, success ? UIFactory.Gold : new Color(0.85f, 0.2f, 0.2f)));
         }
 

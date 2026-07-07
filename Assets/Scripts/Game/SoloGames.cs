@@ -5,12 +5,16 @@ namespace JesBox.Game
     public enum SoloGameKind
     {
         FieryFurnaceDash,
-        DavidsSlingshot
+        DavidsSlingshot,
+        JoyfulPrayer,
+        LoavesAndFishesMultiply,
+        PartingTheSea
     }
 
     /// <summary>
     /// Unlike <see cref="MicrogameDef"/>, these render on the TV/host itself —
-    /// the chosen player's phone is just a controller (WarioWare style).
+    /// the chosen player's phone is just a controller (WarioWare style). Every
+    /// one is a single quick pass/fail challenge, not a scored timer.
     /// </summary>
     public class SoloGameDef
     {
@@ -33,9 +37,15 @@ namespace JesBox.Game
         public static readonly List<SoloGameDef> All = new List<SoloGameDef>
         {
             new SoloGameDef(SoloGameKind.FieryFurnaceDash, "Fiery Furnace Dash",
-                "Tap LEFT or RIGHT to dodge the flames!", 10f),
+                "Tap LEFT/RIGHT to dodge 3 flames — one hit and you're out!", 6f),
             new SoloGameDef(SoloGameKind.DavidsSlingshot, "David's Slingshot",
-                "Tap FIRE the instant your sling lines up with Goliath!", 12f),
+                "You get ONE shot — tap FIRE when your sling lines up with Goliath!", 4f),
+            new SoloGameDef(SoloGameKind.JoyfulPrayer, "Joyful Prayer",
+                "Shake your phone as fast as you can before time runs out!", 3f),
+            new SoloGameDef(SoloGameKind.LoavesAndFishesMultiply, "Loaves and Fishes",
+                "You get ONE try — tap MULTIPLY! the instant the basket lines up!", 4f),
+            new SoloGameDef(SoloGameKind.PartingTheSea, "Parting the Sea",
+                "Tap LEFT, RIGHT, LEFT, RIGHT — fast! — to part the waters!", 4f),
         };
     }
 }
