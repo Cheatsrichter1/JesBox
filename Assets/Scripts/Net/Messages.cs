@@ -136,4 +136,25 @@ namespace JesBox.Net
         public string phase = "final";
         public List<PlayerPublic> players;
     }
+
+    // Chosen One (solo spotlight: one random player controls, everyone watches the TV)
+    public class SoloTurnPayload
+    {
+        public string phase = "solo_turn";
+        public int index;
+        public int total;
+        public string chosenId;
+        public string chosenName;
+        public string kind;
+        public string title;
+        public string controllerInstructions;
+        public float duration;
+    }
+
+    public class SoloRevealPayload
+    {
+        public string phase = "solo_reveal";
+        public string title;
+        public List<PlayerPublic> players;
+    }
 }

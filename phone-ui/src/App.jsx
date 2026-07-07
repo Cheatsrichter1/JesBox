@@ -8,6 +8,7 @@ import MicrogameScreen from './components/MicrogameScreen.jsx';
 import RoundRevealScreen from './components/RoundRevealScreen.jsx';
 import VotePromptScreen from './components/VotePromptScreen.jsx';
 import VoteRevealScreen from './components/VoteRevealScreen.jsx';
+import SoloTurnScreen from './components/SoloTurnScreen.jsx';
 
 function getWsUrl() {
   const proto = window.location.protocol === 'https:' ? 'wss' : 'ws';
@@ -16,7 +17,8 @@ function getWsUrl() {
 
 export default function App() {
   // 'join' | 'connecting' | 'lobby' | 'question' | 'reveal' | 'microgame' |
-  // 'microgame_reveal' | 'vote_prompt' | 'vote_reveal' | 'final'
+  // 'microgame_reveal' | 'vote_prompt' | 'vote_reveal' | 'solo_turn' |
+  // 'solo_reveal' | 'final'
   const [screen, setScreen] = useState('join');
   const [error, setError] = useState('');
   const [playerId, setPlayerId] = useState(null);
@@ -107,6 +109,14 @@ export default function App() {
     sendAction({ action: 'submit_score', value });
   }, [sendAction]);
 
+  const move = useCallback((direction) => {
+    sendAction({ action: 'move', choice: direction });
+  }, [sendAction]);
+
+  const fire = useCallback(() => {
+    sendAction({ action: 'fire' });
+  }, [sendAction]);
+
   switch (screen) {
     case 'connecting':
       return (
@@ -129,6 +139,10 @@ export default function App() {
       return <VotePromptScreen game={game} selectedChoice={selectedChoice} onVote={vote} />;
     case 'vote_reveal':
       return <VoteRevealScreen game={game} playerId={playerId} />;
+    case 'solo_turn':
+      return <SoloTurnScreen game={game} playerId={playerId} onMove={move} onFire={fire} />;
+    case 'solo_reveal':
+      return <RoundRevealScreen game={game} playerId={playerId} />;
     case 'final':
       return <FinalScreen game={game} playerId={playerId} />;
     case 'join':

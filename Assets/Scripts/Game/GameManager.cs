@@ -27,7 +27,7 @@ namespace JesBox.Game
         [SerializeField] private int questionsPerGame = 5;
         [SerializeField] private float revealDuration = 5f;
 
-        private enum GameMode { Trivia, Microgames, PromptVote }
+        private enum GameMode { Trivia, Microgames, PromptVote, ChosenOne }
 
         private class PlayerState
         {
@@ -56,10 +56,39 @@ namespace JesBox.Game
         private Difficulty _selectedDifficulty = Difficulty.Medium;
         private int _microgameRounds = 4;
         private int _votePromptCount = 5;
+        private int _soloTurns = 6;
+
+        // Chosen One (solo spotlight) live state
+        private class SoloObstacle
+        {
+            public RectTransform Rt;
+            public int Lane;
+            public bool Resolved;
+        }
+
+        private string _currentChosenId;
+        private SoloGameKind _currentSoloKind;
+        private int _soloLane;
+        private int _soloHits;
+        private int _soloDodged;
+        private float _soloSpawnTimer;
+        private float _soloGoliathTime;
+        private float _soloGoliathX;
+        private float _soloLastFireTime = -999f;
+        private RectTransform _soloPlayerMarker;
+        private RectTransform _soloGoliathMarker;
+        private readonly List<SoloObstacle> _soloObstacles = new List<SoloObstacle>();
+        private const int SoloMaxHits = 3;
+        private const float SoloLaneOffset = 280f;
+        private const float SoloPlayerY = -180f;
+        private const float SoloSpawnY = 180f;
+        private const float SoloGoliathAmplitude = 320f;
+        private const float SoloGoliathHitTolerance = 70f;
+        private const float SoloFireCooldown = 0.35f;
 
         // UI references
-        private RectTransform _lobbyPanel, _questionPanel, _microgamePanel, _revealPanel, _finalPanel;
-        private RectTransform _triviaSettingsGroup, _microgameSettingsGroup, _voteSettingsGroup;
+        private RectTransform _lobbyPanel, _questionPanel, _microgamePanel, _revealPanel, _finalPanel, _soloPanel;
+        private RectTransform _triviaSettingsGroup, _microgameSettingsGroup, _voteSettingsGroup, _soloSettingsGroup;
         private Text _lobbyCodeText, _lobbyPlayersText;
         private Button _startButton;
         private Dictionary<int, Button> _modeChips;
@@ -71,6 +100,9 @@ namespace JesBox.Game
         private Text _revealBannerText, _revealScoresText;
         private Text _finalScoresText;
         private Button _backToMenuButton;
+        private Text _soloHeaderText, _soloChosenNameText, _soloTitleText, _soloInstructionsText, _soloTimerText;
+        private Image _soloTimerFill;
+        private RectTransform _soloStage;
 
         private void Awake()
         {
@@ -167,6 +199,12 @@ namespace JesBox.Game
                             if (!_votesThisRound.ContainsKey(game.playerId))
                                 _votesThisRound[game.playerId] = game.data.choice;
                             break;
+                        case "move":
+                            if (game.playerId == _currentChosenId) HandleSoloMove(game.data.choice);
+                            break;
+                        case "fire":
+                            if (game.playerId == _currentChosenId) HandleSoloFire();
+                            break;
                     }
                     break;
                 }
@@ -202,6 +240,7 @@ namespace JesBox.Game
                 case GameMode.Trivia: StartCoroutine(RunTriviaGame()); break;
                 case GameMode.Microgames: StartCoroutine(RunMicrogames()); break;
                 case GameMode.PromptVote: StartCoroutine(RunPromptVote()); break;
+                case GameMode.ChosenOne: StartCoroutine(RunChosenOne()); break;
             }
         }
 
@@ -213,6 +252,8 @@ namespace JesBox.Game
             _tapCounts.Clear();
             _submittedScores.Clear();
             _votesThisRound.Clear();
+            _currentChosenId = null;
+            ClearSoloStage();
             RefreshLobbyUI();
             BroadcastLobby();
             ShowOnly(_lobbyPanel);
@@ -465,6 +506,224 @@ namespace JesBox.Game
             yield return new WaitForSeconds(revealDuration);
         }
 
+        // ---- Game flow: Chosen One (solo spotlight) ----
+
+        private IEnumerator RunChosenOne()
+        {
+            var bag = new List<string>();
+
+            for (int i = 0; i < _soloTurns; i++)
+            {
+                string chosenId = PopNextChosenPlayer(bag);
+                if (chosenId == null) break; // everyone left
+
+                var def = SoloGames.All[Random.Range(0, SoloGames.All.Count)];
+                yield return RunSoloTurn(def, chosenId, i, _soloTurns);
+            }
+
+            FinishGame();
+        }
+
+        private string PopNextChosenPlayer(List<string> bag)
+        {
+            while (true)
+            {
+                if (bag.Count == 0)
+                {
+                    if (_players.Count == 0) return null;
+                    bag.AddRange(_players.Keys);
+                    Shuffle(bag);
+                }
+
+                string id = bag[0];
+                bag.RemoveAt(0);
+                if (_players.ContainsKey(id)) return id;
+            }
+        }
+
+        private IEnumerator RunSoloTurn(SoloGameDef def, string chosenId, int index, int total)
+        {
+            _currentChosenId = chosenId;
+            _currentSoloKind = def.Kind;
+            _currentRemaining = def.Duration;
+            _soloLane = 1;
+            _soloHits = 0;
+            _soloDodged = 0;
+            _soloSpawnTimer = 0f;
+            _soloGoliathTime = 0f;
+            _soloGoliathX = 0f;
+            _soloLastFireTime = -999f;
+
+            string chosenName = _players[chosenId].Name;
+
+            _net.SendJson(new GameOut<SoloTurnPayload>
+            {
+                data = new SoloTurnPayload
+                {
+                    index = index,
+                    total = total,
+                    chosenId = chosenId,
+                    chosenName = chosenName,
+                    kind = def.Kind.ToString(),
+                    title = def.Title,
+                    controllerInstructions = def.ControllerInstructions,
+                    duration = def.Duration
+                }
+            });
+
+            ShowSoloTurnUI(def, chosenName, index, total);
+            SetupSoloStage(def.Kind);
+
+            float elapsed = 0f;
+            bool earlyEnd = false;
+            while (elapsed < def.Duration && !earlyEnd)
+            {
+                elapsed += Time.deltaTime;
+                _currentRemaining = Mathf.Max(0f, def.Duration - elapsed);
+                UpdateSoloTimerUI(def.Duration);
+                earlyEnd = TickSoloGame(def.Kind, Time.deltaTime);
+                yield return null;
+            }
+
+            ClearSoloStage();
+            _currentChosenId = null;
+
+            if (!_players.TryGetValue(chosenId, out var chosenPlayer))
+            {
+                // Chosen player disconnected mid-turn; skip scoring and move on.
+                yield break;
+            }
+
+            int points = ComputeSoloScore(def.Kind);
+            var deltas = new Dictionary<string, int>();
+            foreach (var kv in _players) deltas[kv.Key] = 0;
+            deltas[chosenId] = points;
+            chosenPlayer.Score += points;
+
+            var publicList = PublicList(deltas);
+            string resultText = BuildSoloResultText(def.Kind, chosenName, points);
+            _net.SendJson(new GameOut<SoloRevealPayload> { data = new SoloRevealPayload { title = resultText, players = publicList } });
+            ShowRevealUI(resultText, publicList);
+
+            yield return new WaitForSeconds(revealDuration);
+        }
+
+        private bool TickSoloGame(SoloGameKind kind, float dt)
+        {
+            if (kind == SoloGameKind.FieryFurnaceDash) return TickFurnaceDash(dt);
+            if (kind == SoloGameKind.DavidsSlingshot) { TickSlingshot(dt); return false; }
+            return false;
+        }
+
+        private bool TickFurnaceDash(float dt)
+        {
+            const float fallSpeed = 220f;
+            const float spawnInterval = 0.85f;
+
+            _soloSpawnTimer -= dt;
+            if (_soloSpawnTimer <= 0f)
+            {
+                _soloSpawnTimer = spawnInterval;
+                SpawnFurnaceObstacle();
+            }
+
+            for (int i = _soloObstacles.Count - 1; i >= 0; i--)
+            {
+                var obstacle = _soloObstacles[i];
+                if (obstacle.Resolved) { _soloObstacles.RemoveAt(i); continue; }
+
+                var pos = obstacle.Rt.anchoredPosition;
+                pos.y -= fallSpeed * dt;
+                obstacle.Rt.anchoredPosition = pos;
+
+                if (pos.y <= SoloPlayerY + 20f && pos.y > SoloPlayerY - 40f && obstacle.Lane == _soloLane)
+                {
+                    obstacle.Resolved = true;
+                    _soloHits++;
+                    FlashSoloFeedback(false);
+                    Destroy(obstacle.Rt.gameObject);
+                    _soloObstacles.RemoveAt(i);
+                    if (_soloHits >= SoloMaxHits) return true;
+                }
+                else if (pos.y < SoloPlayerY - 60f)
+                {
+                    obstacle.Resolved = true;
+                    _soloDodged++;
+                    Destroy(obstacle.Rt.gameObject);
+                    _soloObstacles.RemoveAt(i);
+                }
+            }
+
+            return false;
+        }
+
+        private void SpawnFurnaceObstacle()
+        {
+            int lane = Random.Range(0, 3);
+            var go = new GameObject("Flame", typeof(Image));
+            var rt = go.GetComponent<RectTransform>();
+            rt.SetParent(_soloStage, false);
+            rt.anchorMin = new Vector2(0.5f, 0.5f);
+            rt.anchorMax = new Vector2(0.5f, 0.5f);
+            rt.sizeDelta = new Vector2(70, 70);
+            rt.anchoredPosition = new Vector2((lane - 1) * SoloLaneOffset, SoloSpawnY);
+            go.GetComponent<Image>().color = new Color(0.85f, 0.35f, 0.15f, 0.9f);
+
+            _soloObstacles.Add(new SoloObstacle { Rt = rt, Lane = lane, Resolved = false });
+        }
+
+        private void TickSlingshot(float dt)
+        {
+            const float baseSpeed = 1.4f;
+            _soloGoliathTime += dt;
+            float speed = baseSpeed + _soloGoliathTime * 0.05f;
+            _soloGoliathX = SoloGoliathAmplitude * Mathf.Sin(_soloGoliathTime * speed);
+            if (_soloGoliathMarker != null)
+                _soloGoliathMarker.anchoredPosition = new Vector2(_soloGoliathX, 100f);
+        }
+
+        private void HandleSoloMove(int direction)
+        {
+            if (direction == 0 || _currentSoloKind != SoloGameKind.FieryFurnaceDash) return;
+            _soloLane = Mathf.Clamp(_soloLane + (direction > 0 ? 1 : -1), 0, 2);
+            UpdateSoloPlayerMarkerPosition();
+        }
+
+        private void HandleSoloFire()
+        {
+            if (_currentSoloKind != SoloGameKind.DavidsSlingshot) return;
+            if (Time.time - _soloLastFireTime < SoloFireCooldown) return;
+            _soloLastFireTime = Time.time;
+
+            bool hit = Mathf.Abs(_soloGoliathX) <= SoloGoliathHitTolerance;
+            if (hit) _soloHits++;
+            FlashSoloFeedback(hit);
+        }
+
+        private int ComputeSoloScore(SoloGameKind kind)
+        {
+            if (kind == SoloGameKind.FieryFurnaceDash)
+            {
+                int points = _soloDodged * 40;
+                if (_soloHits == 0 && _soloDodged > 0) points += 200;
+                return points;
+            }
+
+            return _soloHits * 150;
+        }
+
+        private string BuildSoloResultText(SoloGameKind kind, string chosenName, int points)
+        {
+            if (kind == SoloGameKind.FieryFurnaceDash)
+            {
+                return _soloHits >= SoloMaxHits
+                    ? $"{chosenName} dodged {_soloDodged} flames before getting caught! (+{points})"
+                    : $"{chosenName} survived the furnace, dodging {_soloDodged} flames! (+{points})";
+            }
+
+            return $"{chosenName} struck Goliath {_soloHits} time{(_soloHits == 1 ? "" : "s")}! (+{points})";
+        }
+
         // ---- UI: build ----
 
         private void BuildUI()
@@ -475,6 +734,7 @@ namespace JesBox.Game
             _lobbyPanel = BuildLobbyPanel(canvas.transform);
             _questionPanel = BuildQuestionPanel(canvas.transform);
             _microgamePanel = BuildMicrogamePanel(canvas.transform);
+            _soloPanel = BuildSoloPanel(canvas.transform);
             _revealPanel = BuildRevealPanel(canvas.transform);
             _finalPanel = BuildFinalPanel(canvas.transform);
         }
@@ -492,12 +752,13 @@ namespace JesBox.Game
 
             UIFactory.CreateText(panel, "GAME MODE", 18, UIFactory.Gold, TextAnchor.MiddleCenter,
                 new Vector2(0, 335), new Vector2(400, 26));
-            _modeChips = BuildChipRow(panel, new[] { "Trivia Quiz", "Microgames", "Prompt & Vote" },
-                new Vector2(0, 288), 340, 64, 20, idx => SelectMode((GameMode)idx));
+            _modeChips = BuildChipRow(panel, new[] { "Trivia Quiz", "Microgames", "Prompt & Vote", "Chosen One" },
+                new Vector2(0, 288), 260, 64, 16, idx => SelectMode((GameMode)idx));
 
             _triviaSettingsGroup = BuildTriviaSettingsGroup(panel, 195);
             _microgameSettingsGroup = BuildRoundsSettingsGroup(panel, 195, "Microgame Rounds", 2, 8, 1, _microgameRounds, v => _microgameRounds = v);
             _voteSettingsGroup = BuildRoundsSettingsGroup(panel, 195, "Vote Prompts", 2, VotePrompts.All.Count, 1, _votePromptCount, v => _votePromptCount = v);
+            _soloSettingsGroup = BuildRoundsSettingsGroup(panel, 195, "Turns", 2, 12, 1, _soloTurns, v => _soloTurns = v);
 
             _lobbyPlayersText = UIFactory.CreateText(panel, "Waiting for players...", 30, UIFactory.Cream, TextAnchor.MiddleCenter,
                 new Vector2(0, -90), new Vector2(1200, 260));
@@ -574,6 +835,7 @@ namespace JesBox.Game
             _triviaSettingsGroup.gameObject.SetActive(mode == GameMode.Trivia);
             _microgameSettingsGroup.gameObject.SetActive(mode == GameMode.Microgames);
             _voteSettingsGroup.gameObject.SetActive(mode == GameMode.PromptVote);
+            _soloSettingsGroup.gameObject.SetActive(mode == GameMode.ChosenOne);
         }
 
         private void SelectDifficulty(Difficulty difficulty)
@@ -646,6 +908,34 @@ namespace JesBox.Game
             return panel;
         }
 
+        private RectTransform BuildSoloPanel(Transform parent)
+        {
+            var panel = UIFactory.CreateFullStretchPanel(parent, "SoloPanel", Color.clear);
+            _soloHeaderText = UIFactory.CreateText(panel, "", 32, UIFactory.Gold, TextAnchor.MiddleCenter,
+                new Vector2(0, 460), new Vector2(1000, 50));
+            _soloChosenNameText = UIFactory.CreateText(panel, "", 46, UIFactory.Gold, TextAnchor.MiddleCenter,
+                new Vector2(0, 395), new Vector2(1400, 60), FontStyle.Bold);
+            _soloTitleText = UIFactory.CreateText(panel, "", 42, UIFactory.Cream, TextAnchor.MiddleCenter,
+                new Vector2(0, 330), new Vector2(1400, 60), FontStyle.Bold);
+            _soloInstructionsText = UIFactory.CreateText(panel, "", 24, UIFactory.Cream, TextAnchor.MiddleCenter,
+                new Vector2(0, 270), new Vector2(1200, 60));
+
+            var stageGo = new GameObject("SoloStage", typeof(Image));
+            _soloStage = stageGo.GetComponent<RectTransform>();
+            _soloStage.SetParent(panel, false);
+            _soloStage.anchorMin = new Vector2(0.5f, 0.5f);
+            _soloStage.anchorMax = new Vector2(0.5f, 0.5f);
+            _soloStage.anchoredPosition = new Vector2(0, -40);
+            _soloStage.sizeDelta = new Vector2(900, 420);
+            stageGo.GetComponent<Image>().color = new Color(1f, 1f, 1f, 0.05f);
+
+            var (timerText, fill) = BuildTimerWidget(panel, -310);
+            _soloTimerText = timerText;
+            _soloTimerFill = fill;
+
+            return panel;
+        }
+
         private RectTransform BuildRevealPanel(Transform parent)
         {
             var panel = UIFactory.CreateFullStretchPanel(parent, "RevealPanel", Color.clear);
@@ -675,6 +965,7 @@ namespace JesBox.Game
             _lobbyPanel.gameObject.SetActive(panel == _lobbyPanel);
             _questionPanel.gameObject.SetActive(panel == _questionPanel);
             _microgamePanel.gameObject.SetActive(panel == _microgamePanel);
+            _soloPanel.gameObject.SetActive(panel == _soloPanel);
             _revealPanel.gameObject.SetActive(panel == _revealPanel);
             _finalPanel.gameObject.SetActive(panel == _finalPanel);
         }
@@ -727,6 +1018,98 @@ namespace JesBox.Game
             _microgameTimerText.text = Mathf.CeilToInt(_currentRemaining).ToString();
             if (_microgameTimerFill != null)
                 _microgameTimerFill.fillAmount = duration <= 0 ? 0 : _currentRemaining / duration;
+        }
+
+        private void ShowSoloTurnUI(SoloGameDef def, string chosenName, int index, int total)
+        {
+            ShowOnly(_soloPanel);
+            _soloHeaderText.text = $"Chosen One — Turn {index + 1} / {total}";
+            _soloChosenNameText.text = $"{chosenName} is up!";
+            _soloTitleText.text = def.Title;
+            _soloInstructionsText.text = "Everyone else, cheer them on — watch the screen!";
+        }
+
+        private void UpdateSoloTimerUI(float duration)
+        {
+            _soloTimerText.text = Mathf.CeilToInt(_currentRemaining).ToString();
+            if (_soloTimerFill != null)
+                _soloTimerFill.fillAmount = duration <= 0 ? 0 : _currentRemaining / duration;
+        }
+
+        private void SetupSoloStage(SoloGameKind kind)
+        {
+            ClearSoloStage();
+
+            if (kind == SoloGameKind.FieryFurnaceDash)
+            {
+                var go = new GameObject("Player", typeof(Image));
+                _soloPlayerMarker = go.GetComponent<RectTransform>();
+                _soloPlayerMarker.SetParent(_soloStage, false);
+                _soloPlayerMarker.anchorMin = new Vector2(0.5f, 0.5f);
+                _soloPlayerMarker.anchorMax = new Vector2(0.5f, 0.5f);
+                _soloPlayerMarker.sizeDelta = new Vector2(80, 80);
+                go.GetComponent<Image>().color = UIFactory.Gold;
+                UpdateSoloPlayerMarkerPosition();
+            }
+            else if (kind == SoloGameKind.DavidsSlingshot)
+            {
+                var zoneGo = new GameObject("TargetZone", typeof(Image));
+                var zoneRt = zoneGo.GetComponent<RectTransform>();
+                zoneRt.SetParent(_soloStage, false);
+                zoneRt.anchorMin = new Vector2(0.5f, 0.5f);
+                zoneRt.anchorMax = new Vector2(0.5f, 0.5f);
+                zoneRt.anchoredPosition = new Vector2(0, 100);
+                zoneRt.sizeDelta = new Vector2(SoloGoliathHitTolerance * 2, 100);
+                zoneGo.GetComponent<Image>().color = new Color(0.9f, 0.85f, 0.4f, 0.25f);
+
+                var goliathGo = new GameObject("Goliath", typeof(Image));
+                _soloGoliathMarker = goliathGo.GetComponent<RectTransform>();
+                _soloGoliathMarker.SetParent(_soloStage, false);
+                _soloGoliathMarker.anchorMin = new Vector2(0.5f, 0.5f);
+                _soloGoliathMarker.anchorMax = new Vector2(0.5f, 0.5f);
+                _soloGoliathMarker.anchoredPosition = new Vector2(0, 100);
+                _soloGoliathMarker.sizeDelta = new Vector2(90, 90);
+                goliathGo.GetComponent<Image>().color = new Color(0.55f, 0.2f, 0.2f, 0.95f);
+            }
+        }
+
+        private void UpdateSoloPlayerMarkerPosition()
+        {
+            if (_soloPlayerMarker == null) return;
+            _soloPlayerMarker.anchoredPosition = new Vector2((_soloLane - 1) * SoloLaneOffset, SoloPlayerY);
+        }
+
+        private void ClearSoloStage()
+        {
+            foreach (var obstacle in _soloObstacles)
+            {
+                if (obstacle.Rt != null) Destroy(obstacle.Rt.gameObject);
+            }
+            _soloObstacles.Clear();
+            _soloPlayerMarker = null;
+            _soloGoliathMarker = null;
+
+            if (_soloStage == null) return;
+            for (int i = _soloStage.childCount - 1; i >= 0; i--)
+            {
+                Destroy(_soloStage.GetChild(i).gameObject);
+            }
+        }
+
+        private void FlashSoloFeedback(bool success)
+        {
+            Image target = _currentSoloKind == SoloGameKind.FieryFurnaceDash
+                ? _soloPlayerMarker != null ? _soloPlayerMarker.GetComponent<Image>() : null
+                : _soloGoliathMarker != null ? _soloGoliathMarker.GetComponent<Image>() : null;
+            if (target != null) StartCoroutine(FlashRoutine(target, success ? UIFactory.Gold : new Color(0.85f, 0.2f, 0.2f)));
+        }
+
+        private IEnumerator FlashRoutine(Image target, Color flashColor)
+        {
+            Color original = target.color;
+            target.color = flashColor;
+            yield return new WaitForSeconds(0.15f);
+            if (target != null) target.color = original;
         }
 
         private void ShowRevealUI(string bannerText, List<PlayerPublic> players)
