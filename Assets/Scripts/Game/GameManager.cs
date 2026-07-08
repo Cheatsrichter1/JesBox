@@ -106,10 +106,16 @@ namespace JesBox.Game
         private const int SoloPartingTarget = 5;
 
         // Sketch That Verse (draw phase renders live strokes from the artist's
-        // phone onto _soloStage; guess phase reuses _answersThisRound)
+        // phone onto _soloStage; guess phase reuses _answersThisRound). The
+        // stage is temporarily resized bigger than Chosen One's default while
+        // a sketch turn is running — see the size/position resets at the top
+        // of RunSoloTurn and RunSketchTurn.
         private Vector2? _lastDrawPoint;
         private readonly List<RectTransform> _drawSegments = new List<RectTransform>();
-        private static readonly Vector2 SketchStageSize = new Vector2(900f, 420f);
+        private static readonly Vector2 SoloStageDefaultSize = new Vector2(900f, 420f);
+        private static readonly Vector2 SoloStageDefaultPos = new Vector2(0f, -40f);
+        private static readonly Vector2 SketchStageSize = new Vector2(900f, 480f);
+        private static readonly Vector2 SketchStagePos = new Vector2(0f, -10f);
         private const float SketchGuessDuration = 10f;
         private const int SketchGuesserPoints = 500;
         private const int SketchArtistPointsPerGuesser = 150;
@@ -636,6 +642,8 @@ namespace JesBox.Game
             });
 
             ShowSoloTurnUI(def, chosenName, index, total);
+            _soloStage.anchoredPosition = SoloStageDefaultPos;
+            _soloStage.sizeDelta = SoloStageDefaultSize;
             SetupSoloStage(def.Kind);
 
             float elapsed = 0f;
@@ -700,6 +708,8 @@ namespace JesBox.Game
             _net.SendJson(new GameToOut<SketchAnswerPayload> { playerId = chosenId, data = new SketchAnswerPayload { answer = prompt.Answer } });
 
             ShowSketchDrawUI(chosenName, index, total);
+            _soloStage.anchoredPosition = SketchStagePos;
+            _soloStage.sizeDelta = SketchStageSize;
             ClearSoloStage();
 
             float elapsed = 0f;

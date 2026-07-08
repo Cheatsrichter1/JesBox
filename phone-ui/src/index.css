@@ -466,8 +466,8 @@ input[type="text"]:focus {
 
 .sketch-canvas {
   width: 100%;
-  max-width: 420px;
-  aspect-ratio: 900 / 420;
+  max-width: 520px;
+  aspect-ratio: 900 / 480;
   background: var(--cream);
   border-radius: 16px;
   touch-action: none;

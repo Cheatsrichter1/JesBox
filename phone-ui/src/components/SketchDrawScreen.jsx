@@ -102,8 +102,8 @@ function ArtistCanvas({ duration, roundIndex, secretAnswer, onDrawPoint, onDrawC
       <canvas
         ref={canvasRef}
         className="sketch-canvas"
-        width={450}
-        height={210}
+        width={540}
+        height={288}
         onMouseDown={handleStart}
         onMouseMove={handleMove}
         onMouseUp={handleEnd}
