@@ -463,3 +463,13 @@ input[type="text"]:focus {
   height: 100%;
   background: var(--gold);
 }
+
+.sketch-canvas {
+  width: 100%;
+  max-width: 420px;
+  aspect-ratio: 900 / 420;
+  background: var(--cream);
+  border-radius: 16px;
+  touch-action: none;
+  cursor: crosshair;
+}

@@ -103,6 +103,15 @@ namespace JesBox.Game
         private Image _soloPartingMeterFill;
         private const int SoloPartingTarget = 5;
 
+        // Sketch That Verse (draw phase renders live strokes from the artist's
+        // phone onto _soloStage; guess phase reuses _answersThisRound)
+        private Vector2? _lastDrawPoint;
+        private readonly List<RectTransform> _drawSegments = new List<RectTransform>();
+        private static readonly Vector2 SketchStageSize = new Vector2(900f, 420f);
+        private const float SketchGuessDuration = 10f;
+        private const int SketchGuesserPoints = 500;
+        private const int SketchArtistPointsPerGuesser = 150;
+
         private const float SoloRevealDuration = 2.2f;
 
         // UI references
@@ -226,6 +235,14 @@ namespace JesBox.Game
                             break;
                         case "shake":
                             if (game.playerId == _currentChosenId) HandleSoloShake();
+                            break;
+                        case "draw_point":
+                            if (game.playerId == _currentChosenId && _currentSoloKind == SoloGameKind.SketchThatVerse)
+                                HandleDrawPoint(game.data.x, game.data.y, game.data.newStroke);
+                            break;
+                        case "draw_clear":
+                            if (game.playerId == _currentChosenId && _currentSoloKind == SoloGameKind.SketchThatVerse)
+                                HandleDrawClear();
                             break;
                     }
                     break;
@@ -540,7 +557,10 @@ namespace JesBox.Game
                 if (chosenId == null) break; // everyone left
 
                 var def = SoloGames.All[Random.Range(0, SoloGames.All.Count)];
-                yield return RunSoloTurn(def, chosenId, i, _soloTurns);
+                if (def.Kind == SoloGameKind.SketchThatVerse)
+                    yield return RunSketchTurn(def, chosenId, i, _soloTurns);
+                else
+                    yield return RunSoloTurn(def, chosenId, i, _soloTurns);
             }
 
             FinishGame();
@@ -634,6 +654,101 @@ namespace JesBox.Game
 
             var publicList = PublicList(deltas);
             string resultText = BuildSoloResultText(def.Kind, chosenName, points);
+            _net.SendJson(new GameOut<SoloRevealPayload> { data = new SoloRevealPayload { title = resultText, players = publicList } });
+            ShowRevealUI(resultText, publicList);
+
+            yield return new WaitForSeconds(SoloRevealDuration);
+        }
+
+        private IEnumerator RunSketchTurn(SoloGameDef def, string chosenId, int index, int total)
+        {
+            _currentChosenId = chosenId;
+            _currentSoloKind = def.Kind;
+            _lastDrawPoint = null;
+            string chosenName = _players[chosenId].Name;
+            var prompt = DrawPrompts.All[Random.Range(0, DrawPrompts.All.Count)];
+
+            // ---- Draw phase: broadcast the round to everyone, then send the
+            // secret answer to just the artist via a targeted message.
+            float drawDuration = def.Duration;
+            _currentRemaining = drawDuration;
+
+            _net.SendJson(new GameOut<SketchDrawPayload>
+            {
+                data = new SketchDrawPayload { index = index, total = total, chosenId = chosenId, chosenName = chosenName, duration = drawDuration }
+            });
+            _net.SendJson(new GameToOut<SketchAnswerPayload> { playerId = chosenId, data = new SketchAnswerPayload { answer = prompt.Answer } });
+
+            ShowSketchDrawUI(def, chosenName, index, total);
+            ClearSoloStage();
+
+            float elapsed = 0f;
+            while (elapsed < drawDuration)
+            {
+                elapsed += Time.deltaTime;
+                _currentRemaining = Mathf.Max(0f, drawDuration - elapsed);
+                UpdateSoloTimerUI(drawDuration);
+                yield return null;
+            }
+
+            // ---- Guess phase: everyone but the artist picks from 4 options.
+            // Reuses _answersThisRound/"answer" — same shape as trivia guesses.
+            _answersThisRound.Clear();
+            _currentRemaining = SketchGuessDuration;
+
+            _net.SendJson(new GameOut<SketchGuessPayload>
+            {
+                data = new SketchGuessPayload
+                {
+                    index = index,
+                    total = total,
+                    chosenId = chosenId,
+                    chosenName = chosenName,
+                    choices = new List<string>(prompt.Choices),
+                    timeLimit = SketchGuessDuration
+                }
+            });
+            ShowSketchGuessUI(chosenName);
+
+            int guesserCount = Mathf.Max(0, _players.Count - 1);
+            elapsed = 0f;
+            while (elapsed < SketchGuessDuration && _answersThisRound.Count < guesserCount)
+            {
+                elapsed += Time.deltaTime;
+                _currentRemaining = Mathf.Max(0f, SketchGuessDuration - elapsed);
+                UpdateSoloTimerUI(SketchGuessDuration);
+                yield return null;
+            }
+
+            _currentChosenId = null;
+            ClearSoloStage();
+
+            if (!_players.TryGetValue(chosenId, out var chosenPlayer))
+            {
+                // Artist disconnected mid-turn; skip scoring and move on.
+                yield break;
+            }
+
+            var deltas = new Dictionary<string, int>();
+            foreach (var kv in _players) deltas[kv.Key] = 0;
+
+            int correctCount = 0;
+            foreach (var kv in _answersThisRound)
+            {
+                if (kv.Key == chosenId || !_players.TryGetValue(kv.Key, out var guesser)) continue;
+                if (kv.Value.Choice != prompt.CorrectIndex) continue;
+
+                correctCount++;
+                guesser.Score += SketchGuesserPoints;
+                deltas[kv.Key] = SketchGuesserPoints;
+            }
+
+            int artistBonus = SketchArtistPointsPerGuesser * correctCount;
+            chosenPlayer.Score += artistBonus;
+            deltas[chosenId] = artistBonus;
+
+            string resultText = $"{chosenName} drew \"{prompt.Answer}\" — {correctCount}/{guesserCount} guessed it! (+{artistBonus})";
+            var publicList = PublicList(deltas);
             _net.SendJson(new GameOut<SoloRevealPayload> { data = new SoloRevealPayload { title = resultText, players = publicList } });
             ShowRevealUI(resultText, publicList);
 
@@ -756,6 +871,50 @@ namespace JesBox.Game
                 _soloRoundOver = true;
                 _soloWon = true;
             }
+        }
+
+        private void HandleDrawPoint(float normalizedX, float normalizedY, bool newStroke)
+        {
+            var local = new Vector2(
+                (normalizedX - 0.5f) * SketchStageSize.x,
+                (0.5f - normalizedY) * SketchStageSize.y);
+
+            if (newStroke || _lastDrawPoint == null)
+            {
+                _lastDrawPoint = local;
+                return;
+            }
+
+            DrawSketchSegment(_lastDrawPoint.Value, local);
+            _lastDrawPoint = local;
+        }
+
+        private void DrawSketchSegment(Vector2 from, Vector2 to)
+        {
+            var go = new GameObject("Ink", typeof(Image));
+            var rt = go.GetComponent<RectTransform>();
+            rt.SetParent(_soloStage, false);
+            rt.anchorMin = new Vector2(0.5f, 0.5f);
+            rt.anchorMax = new Vector2(0.5f, 0.5f);
+            rt.anchoredPosition = (from + to) / 2f;
+
+            float length = Mathf.Max(Vector2.Distance(from, to), 4f);
+            float angle = Mathf.Atan2(to.y - from.y, to.x - from.x) * Mathf.Rad2Deg;
+            rt.sizeDelta = new Vector2(length, 8f);
+            rt.localRotation = Quaternion.Euler(0, 0, angle);
+            go.GetComponent<Image>().color = new Color(0.13f, 0.09f, 0.06f, 0.95f);
+
+            _drawSegments.Add(rt);
+        }
+
+        private void HandleDrawClear()
+        {
+            foreach (var seg in _drawSegments)
+            {
+                if (seg != null) Destroy(seg.gameObject);
+            }
+            _drawSegments.Clear();
+            _lastDrawPoint = null;
         }
 
         private string BuildSoloResultText(SoloGameKind kind, string chosenName, int points)
@@ -1095,6 +1254,23 @@ namespace JesBox.Game
                 _soloTimerFill.fillAmount = duration <= 0 ? 0 : _currentRemaining / duration;
         }
 
+        private void ShowSketchDrawUI(SoloGameDef def, string chosenName, int index, int total)
+        {
+            ShowOnly(_soloPanel);
+            _soloHeaderText.text = $"Chosen One — Turn {index + 1} / {total}";
+            _soloChosenNameText.text = $"{chosenName} is drawing...";
+            _soloTitleText.text = def.Title;
+            _soloInstructionsText.text = "Watch the sketch appear — get ready to guess!";
+        }
+
+        private void ShowSketchGuessUI(string chosenName)
+        {
+            // Keep _soloPanel/_soloStage as-is so the finished drawing stays
+            // visible while everyone guesses — just update the text above it.
+            _soloChosenNameText.text = $"What did {chosenName} draw?";
+            _soloInstructionsText.text = "Guess on your phone!";
+        }
+
         private void SetupSoloStage(SoloGameKind kind)
         {
             ClearSoloStage();
@@ -1205,6 +1381,8 @@ namespace JesBox.Game
             _soloTargetMarker = null;
             _soloPrayerMeterFill = null;
             _soloPartingMeterFill = null;
+            _drawSegments.Clear();
+            _lastDrawPoint = null;
 
             if (_soloStage == null) return;
             for (int i = _soloStage.childCount - 1; i >= 0; i--)

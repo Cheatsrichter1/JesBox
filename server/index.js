@@ -109,6 +109,16 @@ wss.on('connection', (ws) => {
         break;
       }
 
+      case 'game_to': {
+        // Host-only: relay to exactly one player (e.g. a secret only that
+        // player should see), instead of the whole room.
+        const room = rooms.get(ws.roomCode);
+        if (!room || ws.role !== 'host') return;
+        const target = room.players.get(msg.playerId);
+        if (target) send(target.ws, { type: 'game', data: msg.data });
+        break;
+      }
+
       default:
         break; // ignore unknown message types
     }

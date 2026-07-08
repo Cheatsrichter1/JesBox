@@ -9,6 +9,8 @@ import RoundRevealScreen from './components/RoundRevealScreen.jsx';
 import VotePromptScreen from './components/VotePromptScreen.jsx';
 import VoteRevealScreen from './components/VoteRevealScreen.jsx';
 import SoloTurnScreen from './components/SoloTurnScreen.jsx';
+import SketchDrawScreen from './components/SketchDrawScreen.jsx';
+import SketchGuessScreen from './components/SketchGuessScreen.jsx';
 
 function getWsUrl() {
   const proto = window.location.protocol === 'https:' ? 'wss' : 'ws';
@@ -18,13 +20,14 @@ function getWsUrl() {
 export default function App() {
   // 'join' | 'connecting' | 'lobby' | 'question' | 'reveal' | 'microgame' |
   // 'microgame_reveal' | 'vote_prompt' | 'vote_reveal' | 'solo_turn' |
-  // 'solo_reveal' | 'final'
+  // 'solo_reveal' | 'sketch_draw' | 'sketch_guess' | 'final'
   const [screen, setScreen] = useState('join');
   const [error, setError] = useState('');
   const [playerId, setPlayerId] = useState(null);
   const [roomCode, setRoomCode] = useState('');
   const [game, setGame] = useState(null); // last { phase, ... } payload from host
   const [selectedChoice, setSelectedChoice] = useState(null);
+  const [secretAnswer, setSecretAnswer] = useState(null); // Sketch That Verse: only set on the artist's phone
   const wsRef = useRef(null);
 
   const handleMessage = useCallback((raw) => {
@@ -49,8 +52,15 @@ export default function App() {
         break;
       case 'game': {
         const data = msg.data || {};
+        if (data.phase === 'sketch_answer') {
+          // Targeted-only message (game_to) — only the artist's phone ever
+          // receives this. Store it without touching `game`/`screen`.
+          setSecretAnswer(data.answer);
+          break;
+        }
         setGame(data);
-        if (data.phase === 'question' || data.phase === 'vote_prompt') setSelectedChoice(null);
+        if (data.phase === 'question' || data.phase === 'vote_prompt' || data.phase === 'sketch_guess') setSelectedChoice(null);
+        if (data.phase === 'sketch_draw') setSecretAnswer(null);
         if (data.phase) setScreen(data.phase);
         break;
       }
@@ -121,6 +131,14 @@ export default function App() {
     sendAction({ action: 'shake' });
   }, [sendAction]);
 
+  const drawPoint = useCallback((x, y, newStroke) => {
+    sendAction({ action: 'draw_point', x, y, newStroke });
+  }, [sendAction]);
+
+  const drawClear = useCallback(() => {
+    sendAction({ action: 'draw_clear' });
+  }, [sendAction]);
+
   switch (screen) {
     case 'connecting':
       return (
@@ -147,6 +165,18 @@ export default function App() {
       return <SoloTurnScreen game={game} playerId={playerId} onMove={move} onFire={fire} onShake={shake} />;
     case 'solo_reveal':
       return <RoundRevealScreen game={game} playerId={playerId} />;
+    case 'sketch_draw':
+      return (
+        <SketchDrawScreen
+          game={game}
+          playerId={playerId}
+          secretAnswer={secretAnswer}
+          onDrawPoint={drawPoint}
+          onDrawClear={drawClear}
+        />
+      );
+    case 'sketch_guess':
+      return <SketchGuessScreen game={game} playerId={playerId} selectedChoice={selectedChoice} onAnswer={answer} />;
     case 'final':
       return <FinalScreen game={game} playerId={playerId} />;
     case 'join':

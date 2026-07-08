@@ -38,6 +38,9 @@ namespace JesBox.Net
         public string action;
         public int choice = -1;
         public int value;
+        public float x;
+        public float y;
+        public bool newStroke;
     }
 
     public class GameIn
@@ -58,6 +61,15 @@ namespace JesBox.Net
     public class GameOut<T>
     {
         public string type = "game";
+        public T data;
+    }
+
+    /// <summary>Relayed to exactly one player instead of the whole room — for
+    /// data (like a secret answer) that other players shouldn't receive at all.</summary>
+    public class GameToOut<T>
+    {
+        public string type = "game_to";
+        public string playerId;
         public T data;
     }
 
@@ -156,5 +168,35 @@ namespace JesBox.Net
         public string phase = "solo_reveal";
         public string title;
         public List<PlayerPublic> players;
+    }
+
+    // Sketch That Verse (Chosen One variant): draw phase broadcast to everyone,
+    // the secret answer sent only to the artist via GameToOut, then a guess
+    // phase broadcast to everyone before falling back to SoloRevealPayload.
+    public class SketchDrawPayload
+    {
+        public string phase = "sketch_draw";
+        public int index;
+        public int total;
+        public string chosenId;
+        public string chosenName;
+        public float duration;
+    }
+
+    public class SketchAnswerPayload
+    {
+        public string phase = "sketch_answer";
+        public string answer;
+    }
+
+    public class SketchGuessPayload
+    {
+        public string phase = "sketch_guess";
+        public int index;
+        public int total;
+        public string chosenId;
+        public string chosenName;
+        public List<string> choices;
+        public float timeLimit;
     }
 }
