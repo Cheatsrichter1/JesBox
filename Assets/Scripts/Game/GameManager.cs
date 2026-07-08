@@ -240,7 +240,7 @@ namespace JesBox.Game
                             break;
                         case "draw_point":
                             if (game.playerId == _currentChosenId && _inSketchTurn)
-                                HandleDrawPoint(game.data.x, game.data.y, game.data.newStroke);
+                                HandleDrawPoint(game.data.x, game.data.y, game.data.newStroke, game.data.colorIndex, game.data.brushSize);
                             break;
                         case "draw_clear":
                             if (game.playerId == _currentChosenId && _inSketchTurn)
@@ -894,7 +894,24 @@ namespace JesBox.Game
             }
         }
 
-        private void HandleDrawPoint(float normalizedX, float normalizedY, bool newStroke)
+        // Indices must match the PALETTE array in SketchDrawScreen.jsx.
+        private static readonly Color[] SketchPalette =
+        {
+            new Color32(0x22, 0x12, 0x08, 0xF2), // black
+            new Color32(0xC0, 0x39, 0x2B, 0xF2), // red
+            new Color32(0xE0, 0x7B, 0x39, 0xF2), // orange
+            new Color32(0xC9, 0xA2, 0x27, 0xF2), // gold
+            new Color32(0x2E, 0x8B, 0x57, 0xF2), // green
+            new Color32(0x29, 0x80, 0xB9, 0xF2), // blue
+            new Color32(0x8E, 0x44, 0xAD, 0xF2), // purple
+        };
+
+        // Indices must match the BRUSH_SIZES array in SketchDrawScreen.jsx —
+        // roughly 2x their phone-canvas pixel widths, since _soloStage is 2x
+        // the size of the phone's drawing canvas.
+        private static readonly float[] SketchBrushSizes = { 6f, 12f, 20f };
+
+        private void HandleDrawPoint(float normalizedX, float normalizedY, bool newStroke, int colorIndex, int brushSizeIndex)
         {
             var local = new Vector2(
                 (normalizedX - 0.5f) * SketchStageSize.x,
@@ -906,11 +923,13 @@ namespace JesBox.Game
                 return;
             }
 
-            DrawSketchSegment(_lastDrawPoint.Value, local);
+            Color color = SketchPalette[Mathf.Clamp(colorIndex, 0, SketchPalette.Length - 1)];
+            float thickness = SketchBrushSizes[Mathf.Clamp(brushSizeIndex, 0, SketchBrushSizes.Length - 1)];
+            DrawSketchSegment(_lastDrawPoint.Value, local, color, thickness);
             _lastDrawPoint = local;
         }
 
-        private void DrawSketchSegment(Vector2 from, Vector2 to)
+        private void DrawSketchSegment(Vector2 from, Vector2 to, Color color, float thickness)
         {
             var go = new GameObject("Ink", typeof(Image));
             var rt = go.GetComponent<RectTransform>();
@@ -921,9 +940,9 @@ namespace JesBox.Game
 
             float length = Mathf.Max(Vector2.Distance(from, to), 4f);
             float angle = Mathf.Atan2(to.y - from.y, to.x - from.x) * Mathf.Rad2Deg;
-            rt.sizeDelta = new Vector2(length, 8f);
+            rt.sizeDelta = new Vector2(length, thickness);
             rt.localRotation = Quaternion.Euler(0, 0, angle);
-            go.GetComponent<Image>().color = new Color(0.13f, 0.09f, 0.06f, 0.95f);
+            go.GetComponent<Image>().color = color;
 
             _drawSegments.Add(rt);
         }

@@ -131,8 +131,8 @@ export default function App() {
     sendAction({ action: 'shake' });
   }, [sendAction]);
 
-  const drawPoint = useCallback((x, y, newStroke) => {
-    sendAction({ action: 'draw_point', x, y, newStroke });
+  const drawPoint = useCallback((x, y, newStroke, colorIndex, brushSize) => {
+    sendAction({ action: 'draw_point', x, y, newStroke, colorIndex, brushSize });
   }, [sendAction]);
 
   const drawClear = useCallback(() => {

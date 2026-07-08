@@ -41,6 +41,8 @@ namespace JesBox.Net
         public float x;
         public float y;
         public bool newStroke;
+        public int colorIndex;
+        public int brushSize;
     }
 
     public class GameIn
@@ -170,9 +172,9 @@ namespace JesBox.Net
         public List<PlayerPublic> players;
     }
 
-    // Sketch That Verse (Chosen One variant): draw phase broadcast to everyone,
-    // the secret answer sent only to the artist via GameToOut, then a guess
-    // phase broadcast to everyone before falling back to SoloRevealPayload.
+    // Sketch & Guess: draw phase broadcast to everyone, the secret answer
+    // sent only to the artist via GameToOut, then a guess phase broadcast to
+    // everyone before falling back to SoloRevealPayload.
     public class SketchDrawPayload
     {
         public string phase = "sketch_draw";

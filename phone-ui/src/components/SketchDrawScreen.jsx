@@ -1,19 +1,39 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 
 const SEND_INTERVAL_MS = 40; // throttles network sends; local canvas still draws every event
+
+// Indices must match SketchPalette in GameManager.cs.
+const PALETTE = [
+  '#221208', // black
+  '#c0392b', // red
+  '#e07b39', // orange
+  '#c9a227', // gold
+  '#2e8b57', // green
+  '#2980b9', // blue
+  '#8e44ad', // purple
+];
+
+// Indices must match SketchBrushSizes in GameManager.cs.
+const BRUSH_SIZES = [3, 6, 10];
+const BRUSH_LABELS = ['S', 'M', 'L'];
 
 function ArtistCanvas({ duration, roundIndex, secretAnswer, onDrawPoint, onDrawClear }) {
   const canvasRef = useRef(null);
   const drawingRef = useRef(false);
   const lastPointRef = useRef(null);
   const lastSendRef = useRef(0);
+  const [colorIndex, setColorIndex] = useState(0);
+  const [brushIndex, setBrushIndex] = useState(1);
+  const colorIndexRef = useRef(0);
+  const brushIndexRef = useRef(1);
+
+  useEffect(() => { colorIndexRef.current = colorIndex; }, [colorIndex]);
+  useEffect(() => { brushIndexRef.current = brushIndex; }, [brushIndex]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
     const ctx = canvas.getContext('2d');
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-    ctx.strokeStyle = '#221208';
-    ctx.lineWidth = 4;
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
   }, [roundIndex]);
@@ -30,6 +50,8 @@ function ArtistCanvas({ duration, roundIndex, secretAnswer, onDrawPoint, onDrawC
   const drawLocalSegment = (from, to) => {
     const canvas = canvasRef.current;
     const ctx = canvas.getContext('2d');
+    ctx.strokeStyle = PALETTE[colorIndexRef.current];
+    ctx.lineWidth = BRUSH_SIZES[brushIndexRef.current];
     ctx.beginPath();
     ctx.moveTo(from.x * canvas.width, from.y * canvas.height);
     ctx.lineTo(to.x * canvas.width, to.y * canvas.height);
@@ -41,7 +63,7 @@ function ArtistCanvas({ duration, roundIndex, secretAnswer, onDrawPoint, onDrawC
     drawingRef.current = true;
     const p = pointFromEvent(e);
     lastPointRef.current = p;
-    onDrawPoint(p.x, p.y, true);
+    onDrawPoint(p.x, p.y, true, colorIndexRef.current, brushIndexRef.current);
   };
 
   const handleMove = (e) => {
@@ -55,7 +77,7 @@ function ArtistCanvas({ duration, roundIndex, secretAnswer, onDrawPoint, onDrawC
     const now = performance.now();
     if (now - lastSendRef.current >= SEND_INTERVAL_MS) {
       lastSendRef.current = now;
-      onDrawPoint(p.x, p.y, false);
+      onDrawPoint(p.x, p.y, false, colorIndexRef.current, brushIndexRef.current);
     }
   };
 
@@ -90,6 +112,30 @@ function ArtistCanvas({ duration, roundIndex, secretAnswer, onDrawPoint, onDrawC
         onTouchMove={handleMove}
         onTouchEnd={handleEnd}
       />
+      <div className="sketch-toolbar">
+        <div className="sketch-colors">
+          {PALETTE.map((color, i) => (
+            <button
+              key={color}
+              className={`sketch-color-swatch${colorIndex === i ? ' selected' : ''}`}
+              style={{ background: color }}
+              onClick={() => setColorIndex(i)}
+              aria-label={`Color ${i + 1}`}
+            />
+          ))}
+        </div>
+        <div className="sketch-brush-sizes">
+          {BRUSH_LABELS.map((label, i) => (
+            <button
+              key={label}
+              className={`sketch-brush-btn${brushIndex === i ? ' selected' : ''}`}
+              onClick={() => setBrushIndex(i)}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
       <button className="btn" onClick={handleClear}>Clear</button>
     </div>
   );

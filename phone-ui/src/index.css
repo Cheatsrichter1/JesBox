@@ -473,3 +473,52 @@ input[type="text"]:focus {
   touch-action: none;
   cursor: crosshair;
 }
+
+.sketch-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
+  flex-wrap: wrap;
+}
+
+.sketch-colors {
+  display: flex;
+  gap: 8px;
+}
+
+.sketch-color-swatch {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: 3px solid rgba(255, 255, 255, 0.15);
+  cursor: pointer;
+  padding: 0;
+}
+
+.sketch-color-swatch.selected {
+  border-color: var(--gold);
+  transform: scale(1.15);
+}
+
+.sketch-brush-sizes {
+  display: flex;
+  gap: 6px;
+}
+
+.sketch-brush-btn {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  border: 2px solid rgba(255, 255, 255, 0.15);
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--cream);
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.sketch-brush-btn.selected {
+  border-color: var(--gold);
+  background: rgba(232, 199, 102, 0.25);
+  color: var(--gold-soft);
+}
