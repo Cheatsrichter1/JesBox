@@ -102,7 +102,7 @@ export default function SketchDrawScreen({ game, playerId, secretAnswer, onDrawP
   if (!isMe) {
     return (
       <div className="screen">
-        <p className="room-badge">Chosen One — Turn {game.index + 1} / {game.total}</p>
+        <p className="room-badge">Sketch & Guess — Round {game.index + 1} / {game.total}</p>
         <div className="cross">✝</div>
         <p className="question-text">{game.chosenName} is drawing!</p>
         <p className="subtitle">Watch the big screen — you'll guess what it is in a moment.</p>

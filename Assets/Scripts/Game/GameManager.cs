@@ -27,7 +27,7 @@ namespace JesBox.Game
         [SerializeField] private int questionsPerGame = 5;
         [SerializeField] private float revealDuration = 5f;
 
-        private enum GameMode { Trivia, Microgames, PromptVote, ChosenOne }
+        private enum GameMode { Trivia, Microgames, PromptVote, ChosenOne, Sketch }
 
         private class PlayerState
         {
@@ -57,6 +57,7 @@ namespace JesBox.Game
         private int _microgameRounds = 4;
         private int _votePromptCount = 5;
         private int _soloTurns = 6;
+        private int _sketchRounds = 5;
 
         // Chosen One (solo spotlight) live state — every game here is a single
         // quick pass/fail challenge (WarioWare style), not a scored timer.
@@ -70,6 +71,7 @@ namespace JesBox.Game
         private SoloGameKind _currentSoloKind;
         private bool _soloRoundOver;
         private bool _soloWon;
+        private bool _inSketchTurn;
 
         // Fiery Furnace Dash
         private int _soloLane;
@@ -116,7 +118,7 @@ namespace JesBox.Game
 
         // UI references
         private RectTransform _lobbyPanel, _questionPanel, _microgamePanel, _revealPanel, _finalPanel, _soloPanel;
-        private RectTransform _triviaSettingsGroup, _microgameSettingsGroup, _voteSettingsGroup, _soloSettingsGroup;
+        private RectTransform _triviaSettingsGroup, _microgameSettingsGroup, _voteSettingsGroup, _soloSettingsGroup, _sketchSettingsGroup;
         private Text _lobbyCodeText, _lobbyPlayersText;
         private Button _startButton;
         private Dictionary<int, Button> _modeChips;
@@ -237,11 +239,11 @@ namespace JesBox.Game
                             if (game.playerId == _currentChosenId) HandleSoloShake();
                             break;
                         case "draw_point":
-                            if (game.playerId == _currentChosenId && _currentSoloKind == SoloGameKind.SketchThatVerse)
+                            if (game.playerId == _currentChosenId && _inSketchTurn)
                                 HandleDrawPoint(game.data.x, game.data.y, game.data.newStroke);
                             break;
                         case "draw_clear":
-                            if (game.playerId == _currentChosenId && _currentSoloKind == SoloGameKind.SketchThatVerse)
+                            if (game.playerId == _currentChosenId && _inSketchTurn)
                                 HandleDrawClear();
                             break;
                     }
@@ -280,6 +282,7 @@ namespace JesBox.Game
                 case GameMode.Microgames: StartCoroutine(RunMicrogames()); break;
                 case GameMode.PromptVote: StartCoroutine(RunPromptVote()); break;
                 case GameMode.ChosenOne: StartCoroutine(RunChosenOne()); break;
+                case GameMode.Sketch: StartCoroutine(RunSketchGame()); break;
             }
         }
 
@@ -292,6 +295,7 @@ namespace JesBox.Game
             _submittedScores.Clear();
             _votesThisRound.Clear();
             _currentChosenId = null;
+            _inSketchTurn = false;
             ClearSoloStage();
             RefreshLobbyUI();
             BroadcastLobby();
@@ -557,10 +561,24 @@ namespace JesBox.Game
                 if (chosenId == null) break; // everyone left
 
                 var def = SoloGames.All[Random.Range(0, SoloGames.All.Count)];
-                if (def.Kind == SoloGameKind.SketchThatVerse)
-                    yield return RunSketchTurn(def, chosenId, i, _soloTurns);
-                else
-                    yield return RunSoloTurn(def, chosenId, i, _soloTurns);
+                yield return RunSoloTurn(def, chosenId, i, _soloTurns);
+            }
+
+            FinishGame();
+        }
+
+        // ---- Game flow: Sketch & Guess ----
+
+        private IEnumerator RunSketchGame()
+        {
+            var bag = new List<string>();
+
+            for (int i = 0; i < _sketchRounds; i++)
+            {
+                string chosenId = PopNextChosenPlayer(bag);
+                if (chosenId == null) break; // everyone left
+
+                yield return RunSketchTurn(chosenId, i, _sketchRounds);
             }
 
             FinishGame();
@@ -660,17 +678,19 @@ namespace JesBox.Game
             yield return new WaitForSeconds(SoloRevealDuration);
         }
 
-        private IEnumerator RunSketchTurn(SoloGameDef def, string chosenId, int index, int total)
+        private const float SketchDrawDuration = 20f;
+
+        private IEnumerator RunSketchTurn(string chosenId, int index, int total)
         {
             _currentChosenId = chosenId;
-            _currentSoloKind = def.Kind;
+            _inSketchTurn = true;
             _lastDrawPoint = null;
             string chosenName = _players[chosenId].Name;
             var prompt = DrawPrompts.All[Random.Range(0, DrawPrompts.All.Count)];
 
             // ---- Draw phase: broadcast the round to everyone, then send the
             // secret answer to just the artist via a targeted message.
-            float drawDuration = def.Duration;
+            float drawDuration = SketchDrawDuration;
             _currentRemaining = drawDuration;
 
             _net.SendJson(new GameOut<SketchDrawPayload>
@@ -679,7 +699,7 @@ namespace JesBox.Game
             });
             _net.SendJson(new GameToOut<SketchAnswerPayload> { playerId = chosenId, data = new SketchAnswerPayload { answer = prompt.Answer } });
 
-            ShowSketchDrawUI(def, chosenName, index, total);
+            ShowSketchDrawUI(chosenName, index, total);
             ClearSoloStage();
 
             float elapsed = 0f;
@@ -721,6 +741,7 @@ namespace JesBox.Game
             }
 
             _currentChosenId = null;
+            _inSketchTurn = false;
             ClearSoloStage();
 
             if (!_players.TryGetValue(chosenId, out var chosenPlayer))
@@ -970,13 +991,14 @@ namespace JesBox.Game
 
             UIFactory.CreateText(panel, "GAME MODE", 18, UIFactory.Gold, TextAnchor.MiddleCenter,
                 new Vector2(0, 335), new Vector2(400, 26));
-            _modeChips = BuildChipRow(panel, new[] { "Trivia Quiz", "Microgames", "Prompt & Vote", "Chosen One" },
-                new Vector2(0, 288), 260, 64, 16, idx => SelectMode((GameMode)idx));
+            _modeChips = BuildChipRow(panel, new[] { "Trivia Quiz", "Microgames", "Prompt & Vote", "Chosen One", "Sketch & Guess" },
+                new Vector2(0, 288), 220, 64, 14, idx => SelectMode((GameMode)idx));
 
             _triviaSettingsGroup = BuildTriviaSettingsGroup(panel, 195);
             _microgameSettingsGroup = BuildRoundsSettingsGroup(panel, 195, "Microgame Rounds", 2, 8, 1, _microgameRounds, v => _microgameRounds = v);
             _voteSettingsGroup = BuildRoundsSettingsGroup(panel, 195, "Vote Prompts", 2, VotePrompts.All.Count, 1, _votePromptCount, v => _votePromptCount = v);
             _soloSettingsGroup = BuildRoundsSettingsGroup(panel, 195, "Turns", 2, 12, 1, _soloTurns, v => _soloTurns = v);
+            _sketchSettingsGroup = BuildRoundsSettingsGroup(panel, 195, "Sketch Rounds", 2, 10, 1, _sketchRounds, v => _sketchRounds = v);
 
             _lobbyPlayersText = UIFactory.CreateText(panel, "Waiting for players...", 30, UIFactory.Cream, TextAnchor.MiddleCenter,
                 new Vector2(0, -90), new Vector2(1200, 260));
@@ -1054,6 +1076,7 @@ namespace JesBox.Game
             _microgameSettingsGroup.gameObject.SetActive(mode == GameMode.Microgames);
             _voteSettingsGroup.gameObject.SetActive(mode == GameMode.PromptVote);
             _soloSettingsGroup.gameObject.SetActive(mode == GameMode.ChosenOne);
+            _sketchSettingsGroup.gameObject.SetActive(mode == GameMode.Sketch);
         }
 
         private void SelectDifficulty(Difficulty difficulty)
@@ -1254,12 +1277,12 @@ namespace JesBox.Game
                 _soloTimerFill.fillAmount = duration <= 0 ? 0 : _currentRemaining / duration;
         }
 
-        private void ShowSketchDrawUI(SoloGameDef def, string chosenName, int index, int total)
+        private void ShowSketchDrawUI(string chosenName, int index, int total)
         {
             ShowOnly(_soloPanel);
-            _soloHeaderText.text = $"Chosen One — Turn {index + 1} / {total}";
+            _soloHeaderText.text = $"Sketch & Guess — Round {index + 1} / {total}";
             _soloChosenNameText.text = $"{chosenName} is drawing...";
-            _soloTitleText.text = def.Title;
+            _soloTitleText.text = "Sketch That Verse";
             _soloInstructionsText.text = "Watch the sketch appear — get ready to guess!";
         }
 

@@ -10,7 +10,7 @@ export default function SketchGuessScreen({ game, playerId, selectedChoice, onAn
   if (isArtist) {
     return (
       <div className="screen">
-        <p className="room-badge">Chosen One — Turn {index + 1} / {total}</p>
+        <p className="room-badge">Sketch & Guess — Round {index + 1} / {total}</p>
         <div className="spinner" />
         <p className="question-text">Waiting for everyone to guess your drawing...</p>
       </div>

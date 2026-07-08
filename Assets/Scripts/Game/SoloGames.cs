@@ -8,18 +8,13 @@ namespace JesBox.Game
         DavidsSlingshot,
         JoyfulPrayer,
         LoavesAndFishesMultiply,
-        PartingTheSea,
-        SketchThatVerse
+        PartingTheSea
     }
 
     /// <summary>
     /// Unlike <see cref="MicrogameDef"/>, these render on the TV/host itself —
     /// the chosen player's phone is just a controller (WarioWare style). Every
     /// one is a single quick pass/fail challenge, not a scored timer.
-    /// <see cref="SoloGameKind.SketchThatVerse"/> is the one exception — it has
-    /// its own two-phase (draw, then guess) flow in GameManager instead of a
-    /// simple pass/fail, so its <see cref="Duration"/> here is just the draw
-    /// phase's length.
     /// </summary>
     public class SoloGameDef
     {
@@ -51,8 +46,6 @@ namespace JesBox.Game
                 "You get ONE try — tap MULTIPLY! the instant the basket lines up!", 4f),
             new SoloGameDef(SoloGameKind.PartingTheSea, "Parting the Sea",
                 "Tap LEFT, RIGHT, LEFT, RIGHT — fast! — to part the waters!", 4f),
-            new SoloGameDef(SoloGameKind.SketchThatVerse, "Sketch That Verse",
-                "Draw the answer on your phone — everyone else has to guess it!", 20f),
         };
     }
 }
