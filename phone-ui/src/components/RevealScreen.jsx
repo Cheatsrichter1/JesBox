@@ -1,6 +1,8 @@
 import React from 'react';
+import { useLanguage } from '../i18n.jsx';
 
 export default function RevealScreen({ game, playerId, selectedChoice }) {
+  const { t } = useLanguage();
   if (!game) return null;
   const { correctIndex, players = [] } = game;
   const me = players.find((p) => p.id === playerId);
@@ -11,16 +13,16 @@ export default function RevealScreen({ game, playerId, selectedChoice }) {
 
   return (
     <div className="screen">
-      {!answered && <p className="result-banner">Time's up!</p>}
+      {!answered && <p className="result-banner">{t('reveal.timeUp')}</p>}
       {answered && (
         <p className={`result-banner ${wasCorrect ? 'correct' : 'incorrect'}`}>
-          {wasCorrect ? 'Correct! ✝' : 'Not quite'}
+          {wasCorrect ? t('reveal.correct') : t('reveal.notQuite')}
         </p>
       )}
 
       {me && (
         <p className="score-line">
-          {me.delta > 0 ? `+${me.delta} points — ` : ''}Total: {me.score}
+          {me.delta > 0 ? t('reveal.pointsPrefix', { delta: me.delta }) : ''}{t('reveal.total', { score: me.score })}
         </p>
       )}
 

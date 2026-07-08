@@ -1,6 +1,8 @@
 import React from 'react';
+import { useLanguage } from '../i18n.jsx';
 
 export default function FinalScreen({ game, playerId }) {
+  const { t } = useLanguage();
   const players = game?.players || [];
   const sorted = [...players].sort((a, b) => b.score - a.score);
   const myRank = sorted.findIndex((p) => p.id === playerId);
@@ -8,8 +10,8 @@ export default function FinalScreen({ game, playerId }) {
   return (
     <div className="screen">
       <div className="cross">✝</div>
-      <h1 className="brand">Final Scores</h1>
-      {myRank === 0 && <p className="subtitle">You led the flock! 🎉</p>}
+      <h1 className="brand">{t('final.title')}</h1>
+      {myRank === 0 && <p className="subtitle">{t('final.ledFlock')}</p>}
 
       <div className="leaderboard">
         {sorted.map((p, i) => (
@@ -20,7 +22,7 @@ export default function FinalScreen({ game, playerId }) {
         ))}
       </div>
 
-      <p className="subtitle">Thanks for playing — ask the host to start a new game.</p>
+      <p className="subtitle">{t('final.thanks')}</p>
     </div>
   );
 }

@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { useLanguage } from '../i18n.jsx';
 
 const SEND_INTERVAL_MS = 40; // throttles network sends; local canvas still draws every event
 
@@ -18,6 +19,7 @@ const BRUSH_SIZES = [3, 6, 10];
 const BRUSH_LABELS = ['S', 'M', 'L'];
 
 function ArtistCanvas({ duration, roundIndex, secretAnswer, onDrawPoint, onDrawClear }) {
+  const { t } = useLanguage();
   const canvasRef = useRef(null);
   const drawingRef = useRef(false);
   const lastPointRef = useRef(null);
@@ -94,11 +96,11 @@ function ArtistCanvas({ duration, roundIndex, secretAnswer, onDrawPoint, onDrawC
 
   return (
     <div className="screen">
-      <p className="room-badge">Sketch That Verse</p>
+      <p className="room-badge">{t('sketch.roomBadge')}</p>
       <div className="timer-track">
         <div key={roundIndex} className="timer-fill" style={{ animationDuration: `${duration}s` }} />
       </div>
-      <p className="question-text">Draw: {secretAnswer || '...'}</p>
+      <p className="question-text">{t('sketch.drawLabel', { answer: secretAnswer || '...' })}</p>
       <canvas
         ref={canvasRef}
         className="sketch-canvas"
@@ -136,22 +138,23 @@ function ArtistCanvas({ duration, roundIndex, secretAnswer, onDrawPoint, onDrawC
           ))}
         </div>
       </div>
-      <button className="btn" onClick={handleClear}>Clear</button>
+      <button className="btn" onClick={handleClear}>{t('sketch.clearButton')}</button>
     </div>
   );
 }
 
 export default function SketchDrawScreen({ game, playerId, secretAnswer, onDrawPoint, onDrawClear }) {
+  const { t } = useLanguage();
   if (!game) return null;
   const isMe = game.chosenId === playerId;
 
   if (!isMe) {
     return (
       <div className="screen">
-        <p className="room-badge">Sketch & Guess — Round {game.index + 1} / {game.total}</p>
+        <p className="room-badge">{t('sketch.roundHeader', { n: game.index + 1, total: game.total })}</p>
         <div className="cross">✝</div>
-        <p className="question-text">{game.chosenName} is drawing!</p>
-        <p className="subtitle">Watch the big screen — you'll guess what it is in a moment.</p>
+        <p className="question-text">{t('sketch.isDrawingWatchers', { name: game.chosenName })}</p>
+        <p className="subtitle">{t('sketch.watchBigScreen')}</p>
       </div>
     );
   }

@@ -1,6 +1,8 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { useLanguage } from '../i18n.jsx';
 
 function MannaRainGame({ game, onTap }) {
+  const { t } = useLanguage();
   const [taps, setTaps] = useState(0);
 
   const handleTap = () => {
@@ -10,19 +12,20 @@ function MannaRainGame({ game, onTap }) {
 
   return (
     <div className="screen">
-      <p className="room-badge">Microgame {game.index + 1} / {game.total}</p>
+      <p className="room-badge">{t('microgame.header', { n: game.index + 1, total: game.total })}</p>
       <div className="timer-track">
         <div key={game.index} className="timer-fill" style={{ animationDuration: `${game.duration}s` }} />
       </div>
       <p className="question-text">{game.title}</p>
       <p className="subtitle">{game.instructions}</p>
-      <button className="tap-button" onClick={handleTap}>TAP!</button>
-      <p className="score-line">{taps} gathered</p>
+      <button className="tap-button" onClick={handleTap}>{t('microgame.tap')}</button>
+      <p className="score-line">{t('microgame.gathered', { n: taps })}</p>
     </div>
   );
 }
 
 function FishersOfMenGame({ game, onSubmitScore }) {
+  const { t } = useLanguage();
   const [icons, setIcons] = useState([]);
   const [score, setScore] = useState(0);
   const scoreRef = useRef(0);
@@ -74,7 +77,7 @@ function FishersOfMenGame({ game, onSubmitScore }) {
 
   return (
     <div className="screen">
-      <p className="room-badge">Microgame {game.index + 1} / {game.total}</p>
+      <p className="room-badge">{t('microgame.header', { n: game.index + 1, total: game.total })}</p>
       <div className="timer-track">
         <div key={game.index} className="timer-fill" style={{ animationDuration: `${game.duration}s` }} />
       </div>
@@ -91,12 +94,13 @@ function FishersOfMenGame({ game, onSubmitScore }) {
           </button>
         ))}
       </div>
-      <p className="score-line">Score: {score}</p>
+      <p className="score-line">{t('microgame.score', { n: score })}</p>
     </div>
   );
 }
 
 function JoyfulNoiseGame({ game, onTap }) {
+  const { t } = useLanguage();
   const [shakes, setShakes] = useState(0);
   const [motionReady, setMotionReady] = useState(false);
   const lastShakeRef = useRef(0);
@@ -149,21 +153,22 @@ function JoyfulNoiseGame({ game, onTap }) {
 
   return (
     <div className="screen">
-      <p className="room-badge">Microgame {game.index + 1} / {game.total}</p>
+      <p className="room-badge">{t('microgame.header', { n: game.index + 1, total: game.total })}</p>
       <div className="timer-track">
         <div key={game.index} className="timer-fill" style={{ animationDuration: `${game.duration}s` }} />
       </div>
       <p className="question-text">{game.title}</p>
       <p className="subtitle">{game.instructions}</p>
       <button className="tap-button" onClick={handleButtonPress}>
-        {motionReady ? '📳 SHAKE!' : 'TAP (or shake)!'}
+        {motionReady ? t('solo.shakeReady') : t('microgame.tapOrShake')}
       </button>
-      <p className="score-line">{shakes} shakes</p>
+      <p className="score-line">{t('microgame.shakes', { n: shakes })}</p>
     </div>
   );
 }
 
 function WalkOnWaterGame({ game, onSubmitScore }) {
+  const { t } = useLanguage();
   const [playerX, setPlayerX] = useState(50);
   const [waves, setWaves] = useState([]);
   const [score, setScore] = useState(0);
@@ -237,7 +242,7 @@ function WalkOnWaterGame({ game, onSubmitScore }) {
 
   return (
     <div className="screen">
-      <p className="room-badge">Microgame {game.index + 1} / {game.total}</p>
+      <p className="room-badge">{t('microgame.header', { n: game.index + 1, total: game.total })}</p>
       <div className="timer-track">
         <div key={game.index} className="timer-fill" style={{ animationDuration: `${game.duration}s` }} />
       </div>
@@ -253,12 +258,13 @@ function WalkOnWaterGame({ game, onSubmitScore }) {
         ))}
         <span className="water-player" style={{ left: `${playerX}%` }}>🧍</span>
       </div>
-      <p className="score-line">Score: {score}</p>
+      <p className="score-line">{t('microgame.score', { n: score })}</p>
     </div>
   );
 }
 
 function LoavesAndFishesGame({ game, onSubmitScore }) {
+  const { t } = useLanguage();
   const [markerPos, setMarkerPos] = useState(0);
   const [zone, setZone] = useState({ start: 40, end: 60 });
   const [score, setScore] = useState(0);
@@ -322,7 +328,7 @@ function LoavesAndFishesGame({ game, onSubmitScore }) {
 
   return (
     <div className="screen">
-      <p className="room-badge">Microgame {game.index + 1} / {game.total}</p>
+      <p className="room-badge">{t('microgame.header', { n: game.index + 1, total: game.total })}</p>
       <div className="timer-track">
         <div key={game.index} className="timer-fill" style={{ animationDuration: `${game.duration}s` }} />
       </div>
@@ -335,14 +341,15 @@ function LoavesAndFishesGame({ game, onSubmitScore }) {
         className={`tap-button ${flash === 'hit' ? 'flash-good' : flash === 'miss' ? 'flash-bad' : ''}`}
         onClick={handleTap}
       >
-        MULTIPLY!
+        {t('microgame.multiply')}
       </button>
-      <p className="score-line">Score: {score}</p>
+      <p className="score-line">{t('microgame.score', { n: score })}</p>
     </div>
   );
 }
 
 function PartingWatersGame({ game, onSubmitScore }) {
+  const { t } = useLanguage();
   const [score, setScore] = useState(0);
   const scoreRef = useRef(0);
   const lastDirRef = useRef(null);
@@ -390,7 +397,7 @@ function PartingWatersGame({ game, onSubmitScore }) {
 
   return (
     <div className="screen">
-      <p className="room-badge">Microgame {game.index + 1} / {game.total}</p>
+      <p className="room-badge">{t('microgame.header', { n: game.index + 1, total: game.total })}</p>
       <div className="timer-track">
         <div key={game.index} className="timer-fill" style={{ animationDuration: `${game.duration}s` }} />
       </div>
@@ -407,7 +414,7 @@ function PartingWatersGame({ game, onSubmitScore }) {
         <div className="parting-water right" style={{ width: `${50 - gapPct / 2}%` }} />
         <div className="parting-path" style={{ width: `${gapPct}%` }}>🚶</div>
       </div>
-      <p className="score-line">{score} swipes</p>
+      <p className="score-line">{t('microgame.swipes', { n: score })}</p>
     </div>
   );
 }

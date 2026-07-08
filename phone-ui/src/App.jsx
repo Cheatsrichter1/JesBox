@@ -11,13 +11,17 @@ import VoteRevealScreen from './components/VoteRevealScreen.jsx';
 import SoloTurnScreen from './components/SoloTurnScreen.jsx';
 import SketchDrawScreen from './components/SketchDrawScreen.jsx';
 import SketchGuessScreen from './components/SketchGuessScreen.jsx';
+import LanguageToggle from './components/LanguageToggle.jsx';
+import { LanguageProvider, useLanguage } from './i18n.jsx';
 
 function getWsUrl() {
   const proto = window.location.protocol === 'https:' ? 'wss' : 'ws';
   return `${proto}://${window.location.host}/ws`;
 }
 
-export default function App() {
+function AppInner() {
+  const { t } = useLanguage();
+
   // 'join' | 'connecting' | 'lobby' | 'question' | 'reveal' | 'microgame' |
   // 'microgame_reveal' | 'vote_prompt' | 'vote_reveal' | 'solo_turn' |
   // 'solo_reveal' | 'sketch_draw' | 'sketch_guess' | 'final'
@@ -46,7 +50,7 @@ export default function App() {
         setScreen('lobby');
         break;
       case 'join_error':
-        setError(msg.message || 'Could not join that room.');
+        setError(msg.message || t('error.joinFailed'));
         setScreen('join');
         if (wsRef.current) wsRef.current.close();
         break;
@@ -65,13 +69,13 @@ export default function App() {
         break;
       }
       case 'host_left':
-        setError('The host disconnected. Ask them to relaunch and rejoin.');
+        setError(t('error.hostLeft'));
         setScreen('join');
         break;
       default:
         break;
     }
-  }, []);
+  }, [t]);
 
   const join = useCallback((name, code) => {
     setError('');
@@ -84,13 +88,13 @@ export default function App() {
     };
     ws.onmessage = (event) => handleMessage(event.data);
     ws.onerror = () => {
-      setError('Connection error. Check the room code and try again.');
+      setError(t('error.connection'));
       setScreen('join');
     };
     ws.onclose = () => {
       setScreen((current) => (current === 'connecting' ? 'join' : current));
     };
-  }, [handleMessage]);
+  }, [handleMessage, t]);
 
   const sendAction = useCallback((payload) => {
     const ws = wsRef.current;
@@ -139,34 +143,45 @@ export default function App() {
     sendAction({ action: 'draw_clear' });
   }, [sendAction]);
 
+  let content;
   switch (screen) {
     case 'connecting':
-      return (
+      content = (
         <div className="screen">
           <div className="spinner" />
-          <p className="subtitle">Joining room...</p>
+          <p className="subtitle">{t('connecting.text')}</p>
         </div>
       );
+      break;
     case 'lobby':
-      return <LobbyScreen roomCode={roomCode} game={game} />;
+      content = <LobbyScreen roomCode={roomCode} game={game} />;
+      break;
     case 'question':
-      return <QuestionScreen game={game} selectedChoice={selectedChoice} onAnswer={answer} />;
+      content = <QuestionScreen game={game} selectedChoice={selectedChoice} onAnswer={answer} />;
+      break;
     case 'reveal':
-      return <RevealScreen game={game} playerId={playerId} selectedChoice={selectedChoice} />;
+      content = <RevealScreen game={game} playerId={playerId} selectedChoice={selectedChoice} />;
+      break;
     case 'microgame':
-      return <MicrogameScreen game={game} onTap={tap} onSubmitScore={submitScore} />;
+      content = <MicrogameScreen game={game} onTap={tap} onSubmitScore={submitScore} />;
+      break;
     case 'microgame_reveal':
-      return <RoundRevealScreen game={game} playerId={playerId} />;
+      content = <RoundRevealScreen game={game} playerId={playerId} />;
+      break;
     case 'vote_prompt':
-      return <VotePromptScreen game={game} selectedChoice={selectedChoice} onVote={vote} />;
+      content = <VotePromptScreen game={game} selectedChoice={selectedChoice} onVote={vote} />;
+      break;
     case 'vote_reveal':
-      return <VoteRevealScreen game={game} playerId={playerId} />;
+      content = <VoteRevealScreen game={game} playerId={playerId} />;
+      break;
     case 'solo_turn':
-      return <SoloTurnScreen game={game} playerId={playerId} onMove={move} onFire={fire} onShake={shake} />;
+      content = <SoloTurnScreen game={game} playerId={playerId} onMove={move} onFire={fire} onShake={shake} />;
+      break;
     case 'solo_reveal':
-      return <RoundRevealScreen game={game} playerId={playerId} />;
+      content = <RoundRevealScreen game={game} playerId={playerId} />;
+      break;
     case 'sketch_draw':
-      return (
+      content = (
         <SketchDrawScreen
           game={game}
           playerId={playerId}
@@ -175,12 +190,31 @@ export default function App() {
           onDrawClear={drawClear}
         />
       );
+      break;
     case 'sketch_guess':
-      return <SketchGuessScreen game={game} playerId={playerId} selectedChoice={selectedChoice} onAnswer={answer} />;
+      content = <SketchGuessScreen game={game} playerId={playerId} selectedChoice={selectedChoice} onAnswer={answer} />;
+      break;
     case 'final':
-      return <FinalScreen game={game} playerId={playerId} />;
+      content = <FinalScreen game={game} playerId={playerId} />;
+      break;
     case 'join':
     default:
-      return <JoinScreen onJoin={join} error={error} />;
+      content = <JoinScreen onJoin={join} error={error} />;
+      break;
   }
+
+  return (
+    <>
+      <LanguageToggle />
+      {content}
+    </>
+  );
+}
+
+export default function App() {
+  return (
+    <LanguageProvider>
+      <AppInner />
+    </LanguageProvider>
+  );
 }

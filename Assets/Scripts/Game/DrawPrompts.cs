@@ -9,14 +9,19 @@ namespace JesBox.Game
     /// </summary>
     public class DrawPrompt
     {
-        public string Answer;
-        public string[] Choices;
+        public string AnswerEn, AnswerDe;
+        public string[] ChoicesEn, ChoicesDe;
         public int CorrectIndex;
 
-        public DrawPrompt(string answer, string[] choices, int correctIndex)
+        public string Answer => L.Current == Language.German ? AnswerDe : AnswerEn;
+        public string[] Choices => L.Current == Language.German ? ChoicesDe : ChoicesEn;
+
+        public DrawPrompt(string answerEn, string answerDe, string[] choicesEn, string[] choicesDe, int correctIndex)
         {
-            Answer = answer;
-            Choices = choices;
+            AnswerEn = answerEn;
+            AnswerDe = answerDe;
+            ChoicesEn = choicesEn;
+            ChoicesDe = choicesDe;
             CorrectIndex = correctIndex;
         }
     }
@@ -30,34 +35,48 @@ namespace JesBox.Game
         // of elimination.
         public static readonly List<DrawPrompt> All = new List<DrawPrompt>
         {
-            new DrawPrompt("Noah's Ark",
-                new[] { "Jonah and the Whale", "Noah's Ark", "The Parting of the Red Sea", "The Tower of Babel" }, 1),
-            new DrawPrompt("The Burning Bush",
-                new[] { "The Ten Commandments", "The Nativity", "The Burning Bush", "Daniel in the Lions' Den" }, 2),
-            new DrawPrompt("David and Goliath",
-                new[] { "Daniel in the Lions' Den", "David and Goliath", "The Good Samaritan", "The Tower of Babel" }, 1),
-            new DrawPrompt("Jonah and the Whale",
-                new[] { "Noah's Ark", "The Parting of the Red Sea", "Jonah and the Whale", "Walking on Water" }, 2),
-            new DrawPrompt("The Nativity",
-                new[] { "The Burning Bush", "The Nativity", "The Good Samaritan", "Adam and Eve" }, 1),
-            new DrawPrompt("Walking on Water",
-                new[] { "Jonah and the Whale", "Walking on Water", "The Parting of the Red Sea", "Loaves and Fishes" }, 1),
-            new DrawPrompt("The Ten Commandments",
-                new[] { "The Burning Bush", "The Tower of Babel", "The Ten Commandments", "The Parting of the Red Sea" }, 2),
-            new DrawPrompt("Loaves and Fishes",
-                new[] { "The Nativity", "Loaves and Fishes", "Walking on Water", "The Good Samaritan" }, 1),
-            new DrawPrompt("Adam and Eve",
-                new[] { "The Prodigal Son", "The Tower of Babel", "Adam and Eve", "The Nativity" }, 2),
-            new DrawPrompt("The Prodigal Son",
-                new[] { "The Good Samaritan", "The Prodigal Son", "Adam and Eve", "David and Goliath" }, 1),
-            new DrawPrompt("Daniel in the Lions' Den",
-                new[] { "David and Goliath", "The Burning Bush", "Jonah and the Whale", "Daniel in the Lions' Den" }, 3),
-            new DrawPrompt("The Good Samaritan",
-                new[] { "The Prodigal Son", "Loaves and Fishes", "The Good Samaritan", "Adam and Eve" }, 2),
-            new DrawPrompt("The Parting of the Red Sea",
-                new[] { "Noah's Ark", "Jonah and the Whale", "Walking on Water", "The Parting of the Red Sea" }, 3),
-            new DrawPrompt("The Tower of Babel",
-                new[] { "Noah's Ark", "Adam and Eve", "The Tower of Babel", "The Ten Commandments" }, 2),
+            new DrawPrompt("Noah's Ark", "Noahs Arche",
+                new[] { "Jonah and the Whale", "Noah's Ark", "The Parting of the Red Sea", "The Tower of Babel" },
+                new[] { "Jona und der Wal", "Noahs Arche", "Die Teilung des Roten Meeres", "Der Turmbau zu Babel" }, 1),
+            new DrawPrompt("The Burning Bush", "Der brennende Dornbusch",
+                new[] { "The Ten Commandments", "The Nativity", "The Burning Bush", "Daniel in the Lions' Den" },
+                new[] { "Die Zehn Gebote", "Die Geburt Jesu", "Der brennende Dornbusch", "Daniel in der Löwengrube" }, 2),
+            new DrawPrompt("David and Goliath", "David und Goliath",
+                new[] { "Daniel in the Lions' Den", "David and Goliath", "The Good Samaritan", "The Tower of Babel" },
+                new[] { "Daniel in der Löwengrube", "David und Goliath", "Der barmherzige Samariter", "Der Turmbau zu Babel" }, 1),
+            new DrawPrompt("Jonah and the Whale", "Jona und der Wal",
+                new[] { "Noah's Ark", "The Parting of the Red Sea", "Jonah and the Whale", "Walking on Water" },
+                new[] { "Noahs Arche", "Die Teilung des Roten Meeres", "Jona und der Wal", "Der Wandel auf dem Wasser" }, 2),
+            new DrawPrompt("The Nativity", "Die Geburt Jesu",
+                new[] { "The Burning Bush", "The Nativity", "The Good Samaritan", "Adam and Eve" },
+                new[] { "Der brennende Dornbusch", "Die Geburt Jesu", "Der barmherzige Samariter", "Adam und Eva" }, 1),
+            new DrawPrompt("Walking on Water", "Der Wandel auf dem Wasser",
+                new[] { "Jonah and the Whale", "Walking on Water", "The Parting of the Red Sea", "Loaves and Fishes" },
+                new[] { "Jona und der Wal", "Der Wandel auf dem Wasser", "Die Teilung des Roten Meeres", "Brote und Fische" }, 1),
+            new DrawPrompt("The Ten Commandments", "Die Zehn Gebote",
+                new[] { "The Burning Bush", "The Tower of Babel", "The Ten Commandments", "The Parting of the Red Sea" },
+                new[] { "Der brennende Dornbusch", "Der Turmbau zu Babel", "Die Zehn Gebote", "Die Teilung des Roten Meeres" }, 2),
+            new DrawPrompt("Loaves and Fishes", "Brote und Fische",
+                new[] { "The Nativity", "Loaves and Fishes", "Walking on Water", "The Good Samaritan" },
+                new[] { "Die Geburt Jesu", "Brote und Fische", "Der Wandel auf dem Wasser", "Der barmherzige Samariter" }, 1),
+            new DrawPrompt("Adam and Eve", "Adam und Eva",
+                new[] { "The Prodigal Son", "The Tower of Babel", "Adam and Eve", "The Nativity" },
+                new[] { "Der verlorene Sohn", "Der Turmbau zu Babel", "Adam und Eva", "Die Geburt Jesu" }, 2),
+            new DrawPrompt("The Prodigal Son", "Der verlorene Sohn",
+                new[] { "The Good Samaritan", "The Prodigal Son", "Adam and Eve", "David and Goliath" },
+                new[] { "Der barmherzige Samariter", "Der verlorene Sohn", "Adam und Eva", "David und Goliath" }, 1),
+            new DrawPrompt("Daniel in the Lions' Den", "Daniel in der Löwengrube",
+                new[] { "David and Goliath", "The Burning Bush", "Jonah and the Whale", "Daniel in the Lions' Den" },
+                new[] { "David und Goliath", "Der brennende Dornbusch", "Jona und der Wal", "Daniel in der Löwengrube" }, 3),
+            new DrawPrompt("The Good Samaritan", "Der barmherzige Samariter",
+                new[] { "The Prodigal Son", "Loaves and Fishes", "The Good Samaritan", "Adam and Eve" },
+                new[] { "Der verlorene Sohn", "Brote und Fische", "Der barmherzige Samariter", "Adam und Eva" }, 2),
+            new DrawPrompt("The Parting of the Red Sea", "Die Teilung des Roten Meeres",
+                new[] { "Noah's Ark", "Jonah and the Whale", "Walking on Water", "The Parting of the Red Sea" },
+                new[] { "Noahs Arche", "Jona und der Wal", "Der Wandel auf dem Wasser", "Die Teilung des Roten Meeres" }, 3),
+            new DrawPrompt("The Tower of Babel", "Der Turmbau zu Babel",
+                new[] { "Noah's Ark", "Adam and Eve", "The Tower of Babel", "The Ten Commandments" },
+                new[] { "Noahs Arche", "Adam und Eva", "Der Turmbau zu Babel", "Die Zehn Gebote" }, 2),
         };
     }
 }

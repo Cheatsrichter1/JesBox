@@ -1,26 +1,29 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { useLanguage } from '../i18n.jsx';
 
 function DirectionController({ onMove }) {
+  const { t } = useLanguage();
   return (
     <div className="solo-controller-row">
-      <button className="solo-dir-btn" onClick={() => onMove(-1)}>◀ LEFT</button>
-      <button className="solo-dir-btn" onClick={() => onMove(1)}>RIGHT ▶</button>
+      <button className="solo-dir-btn" onClick={() => onMove(-1)}>{t('solo.dirLeft')}</button>
+      <button className="solo-dir-btn" onClick={() => onMove(1)}>{t('solo.dirRight')}</button>
     </div>
   );
 }
 
-const FIRE_LABELS = {
-  DavidsSlingshot: '🔥 FIRE!',
-  LoavesAndFishesMultiply: '🍞 MULTIPLY!',
-};
-
 function FireController({ kind, onFire }) {
+  const { t } = useLanguage();
+  const fireLabels = {
+    DavidsSlingshot: t('solo.fire'),
+    LoavesAndFishesMultiply: t('solo.multiply'),
+  };
   return (
-    <button className="tap-button solo-fire-btn" onClick={onFire}>{FIRE_LABELS[kind] || 'GO!'}</button>
+    <button className="tap-button solo-fire-btn" onClick={onFire}>{fireLabels[kind] || t('solo.go')}</button>
   );
 }
 
 function ShakeController({ onShake }) {
+  const { t } = useLanguage();
   const [motionReady, setMotionReady] = useState(false);
   const lastShakeRef = useRef(0);
   const lastAccelRef = useRef(null);
@@ -67,7 +70,7 @@ function ShakeController({ onShake }) {
 
   return (
     <button className="tap-button solo-fire-btn" onClick={handlePress}>
-      {motionReady ? '📳 SHAKE!' : '🙏 PRAY (tap or shake)!'}
+      {motionReady ? t('solo.shakeReady') : t('solo.shakeNotReady')}
     </button>
   );
 }
@@ -81,16 +84,17 @@ const CONTROLLERS = {
 };
 
 export default function SoloTurnScreen({ game, playerId, onMove, onFire, onShake }) {
+  const { t } = useLanguage();
   if (!game) return null;
   const isMe = game.chosenId === playerId;
 
   if (!isMe) {
     return (
       <div className="screen">
-        <p className="room-badge">Chosen One — Turn {game.index + 1} / {game.total}</p>
+        <p className="room-badge">{t('solo.header', { n: game.index + 1, total: game.total })}</p>
         <div className="cross">✝</div>
-        <p className="question-text">{game.chosenName}'s turn!</p>
-        <p className="subtitle">Look up at the screen and cheer them on — you're up soon!</p>
+        <p className="question-text">{t('solo.turnAnnounce', { name: game.chosenName })}</p>
+        <p className="subtitle">{t('solo.watchCheer')}</p>
       </div>
     );
   }
@@ -99,13 +103,13 @@ export default function SoloTurnScreen({ game, playerId, onMove, onFire, onShake
 
   return (
     <div className="screen">
-      <p className="room-badge">Chosen One — Turn {game.index + 1} / {game.total}</p>
+      <p className="room-badge">{t('solo.header', { n: game.index + 1, total: game.total })}</p>
       <div className="timer-track">
         <div key={game.index} className="timer-fill" style={{ animationDuration: `${game.duration}s` }} />
       </div>
       <p className="question-text">{game.title}</p>
       <p className="subtitle">{game.controllerInstructions}</p>
-      <p className="solo-watch-hint">👀 Watch the big screen!</p>
+      <p className="solo-watch-hint">{t('solo.watchHint')}</p>
       {Controller && <Controller kind={game.kind} onMove={onMove} onFire={onFire} onShake={onShake} />}
     </div>
   );

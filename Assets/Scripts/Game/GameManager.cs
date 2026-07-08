@@ -123,12 +123,14 @@ namespace JesBox.Game
         private const float SoloRevealDuration = 2.2f;
 
         // UI references
+        private Transform _canvasRoot;
         private RectTransform _lobbyPanel, _questionPanel, _microgamePanel, _revealPanel, _finalPanel, _soloPanel;
         private RectTransform _triviaSettingsGroup, _microgameSettingsGroup, _voteSettingsGroup, _soloSettingsGroup, _sketchSettingsGroup;
         private Text _lobbyCodeText, _lobbyPlayersText;
         private Button _startButton;
         private Dictionary<int, Button> _modeChips;
         private Dictionary<int, Button> _difficultyChips;
+        private Dictionary<int, Button> _languageChips;
         private Text _questionHeaderText, _questionBodyText, _questionChoicesText, _questionTimerText;
         private Image _questionTimerFill;
         private Text _microgameHeaderText, _microgameTitleText, _microgameInstructionsText, _microgameTimerText;
@@ -383,7 +385,7 @@ namespace JesBox.Game
             var publicList = PublicList(deltas);
             _net.SendJson(new GameOut<RevealPayload> { data = new RevealPayload { correctIndex = q.CorrectIndex, players = publicList } });
             string[] letters = { "A", "B", "C", "D" };
-            ShowRevealUI($"Correct answer: {letters[q.CorrectIndex]}) {q.Choices[q.CorrectIndex]}", publicList);
+            ShowRevealUI(L.T("question.correctAnswer", letters[q.CorrectIndex], q.Choices[q.CorrectIndex]), publicList);
 
             yield return new WaitForSeconds(revealDuration);
         }
@@ -450,8 +452,9 @@ namespace JesBox.Game
             }
 
             var publicList = PublicList(deltas);
-            _net.SendJson(new GameOut<MicrogameRevealPayload> { data = new MicrogameRevealPayload { title = $"{def.Title} — Results!", players = publicList } });
-            ShowRevealUI($"{def.Title} — Results!", publicList);
+            string microResultText = L.T("microgame.results", def.Title);
+            _net.SendJson(new GameOut<MicrogameRevealPayload> { data = new MicrogameRevealPayload { title = microResultText, players = publicList } });
+            ShowRevealUI(microResultText, publicList);
 
             yield return new WaitForSeconds(revealDuration);
         }
@@ -548,8 +551,8 @@ namespace JesBox.Game
 
             string[] letters = { "A", "B", "C", "D" };
             string banner = favoriteIndex >= 0
-                ? $"Crowd favorite: {letters[favoriteIndex]}) {prompt.Options[favoriteIndex]}"
-                : "No votes cast!";
+                ? L.T("vote.crowdFavorite", letters[favoriteIndex], prompt.Options[favoriteIndex])
+                : L.T("vote.noVotes");
             ShowRevealUI(banner, publicList);
 
             yield return new WaitForSeconds(revealDuration);
@@ -778,7 +781,7 @@ namespace JesBox.Game
             chosenPlayer.Score += artistBonus;
             deltas[chosenId] = artistBonus;
 
-            string resultText = $"{chosenName} drew \"{prompt.Answer}\" — {correctCount}/{guesserCount} guessed it! (+{artistBonus})";
+            string resultText = L.T("sketch.result", chosenName, prompt.Answer, correctCount, guesserCount, artistBonus);
             var publicList = PublicList(deltas);
             _net.SendJson(new GameOut<SoloRevealPayload> { data = new SoloRevealPayload { title = resultText, players = publicList } });
             ShowRevealUI(resultText, publicList);
@@ -969,27 +972,39 @@ namespace JesBox.Game
 
         private string BuildSoloResultText(SoloGameKind kind, string chosenName, int points)
         {
+            bool de = L.Current == Language.German;
             string outcome;
             switch (kind)
             {
                 case SoloGameKind.FieryFurnaceDash:
-                    outcome = _soloWon ? "dodged every flame" : "got caught in the flames";
+                    outcome = _soloWon
+                        ? (de ? "wich jeder Flamme aus" : "dodged every flame")
+                        : (de ? "wurde von den Flammen erwischt" : "got caught in the flames");
                     break;
                 case SoloGameKind.DavidsSlingshot:
-                    outcome = _soloWon ? "struck Goliath down with one shot" : "missed their only shot";
+                    outcome = _soloWon
+                        ? (de ? "streckte Goliath mit einem Schuss nieder" : "struck Goliath down with one shot")
+                        : (de ? "verfehlte den einzigen Schuss" : "missed their only shot");
                     break;
                 case SoloGameKind.JoyfulPrayer:
-                    outcome = _soloWon ? "filled the room with joyful prayer" : "ran out of time praying";
+                    outcome = _soloWon
+                        ? (de ? "erfüllte den Raum mit freudigem Gebet" : "filled the room with joyful prayer")
+                        : (de ? "hatte beim Beten keine Zeit mehr" : "ran out of time praying");
                     break;
                 case SoloGameKind.LoavesAndFishesMultiply:
-                    outcome = _soloWon ? "multiplied the loaves and fishes" : "fumbled the miracle";
+                    outcome = _soloWon
+                        ? (de ? "vermehrte die Brote und Fische" : "multiplied the loaves and fishes")
+                        : (de ? "vermasselte das Wunder" : "fumbled the miracle");
                     break;
                 default:
-                    outcome = _soloWon ? "parted the sea" : "couldn't part the waters in time";
+                    outcome = _soloWon
+                        ? (de ? "teilte das Meer" : "parted the sea")
+                        : (de ? "schaffte es nicht rechtzeitig, das Wasser zu teilen" : "couldn't part the waters in time");
                     break;
             }
 
-            return _soloWon ? $"{chosenName} {outcome}! (+{points})" : $"{chosenName} {outcome}. No points this time.";
+            if (_soloWon) return $"{chosenName} {outcome}! (+{points})";
+            return de ? $"{chosenName} {outcome}. Diesmal keine Punkte." : $"{chosenName} {outcome}. No points this time.";
         }
 
         // ---- UI: build ----
@@ -997,46 +1012,67 @@ namespace JesBox.Game
         private void BuildUI()
         {
             var canvas = UIFactory.CreateCanvas("JesBoxCanvas");
-            UIFactory.CreateFullStretchPanel(canvas.transform, "Background", UIFactory.BgDeep);
+            _canvasRoot = canvas.transform;
+            UIFactory.CreateFullStretchPanel(_canvasRoot, "Background", UIFactory.BgDeep);
 
-            _lobbyPanel = BuildLobbyPanel(canvas.transform);
-            _questionPanel = BuildQuestionPanel(canvas.transform);
-            _microgamePanel = BuildMicrogamePanel(canvas.transform);
-            _soloPanel = BuildSoloPanel(canvas.transform);
-            _revealPanel = BuildRevealPanel(canvas.transform);
-            _finalPanel = BuildFinalPanel(canvas.transform);
+            _lobbyPanel = BuildLobbyPanel(_canvasRoot);
+            _questionPanel = BuildQuestionPanel(_canvasRoot);
+            _microgamePanel = BuildMicrogamePanel(_canvasRoot);
+            _soloPanel = BuildSoloPanel(_canvasRoot);
+            _revealPanel = BuildRevealPanel(_canvasRoot);
+            _finalPanel = BuildFinalPanel(_canvasRoot);
+        }
+
+        private void SelectLanguage(Language lang)
+        {
+            if (L.Current == lang) return;
+            L.Current = lang;
+
+            // The lobby is the only panel with static translated labels that
+            // are already built by the time the host can change language, so
+            // just rebuild it in place rather than tracking every Text ref.
+            Destroy(_lobbyPanel.gameObject);
+            _lobbyPanel = BuildLobbyPanel(_canvasRoot);
+            ShowOnly(_lobbyPanel);
+            RefreshLobbyUI();
         }
 
         private RectTransform BuildLobbyPanel(Transform parent)
         {
             var panel = UIFactory.CreateFullStretchPanel(parent, "LobbyPanel", Color.clear);
 
-            UIFactory.CreateText(panel, "JESBOX", 60, UIFactory.Gold, TextAnchor.MiddleCenter,
+            UIFactory.CreateText(panel, L.T("lobby.title"), 60, UIFactory.Gold, TextAnchor.MiddleCenter,
                 new Vector2(0, 500), new Vector2(1200, 80), FontStyle.Bold);
-            _lobbyCodeText = UIFactory.CreateText(panel, "ROOM CODE: ----", 44, UIFactory.Cream, TextAnchor.MiddleCenter,
+            _lobbyCodeText = UIFactory.CreateText(panel, L.T("lobby.roomCode", "----"), 44, UIFactory.Cream, TextAnchor.MiddleCenter,
                 new Vector2(0, 435), new Vector2(1400, 60), FontStyle.Bold);
-            UIFactory.CreateText(panel, $"Join at {JoinUrlHint()}", 22, UIFactory.Cream, TextAnchor.MiddleCenter,
+            UIFactory.CreateText(panel, L.T("lobby.joinAt", JoinUrlHint()), 22, UIFactory.Cream, TextAnchor.MiddleCenter,
                 new Vector2(0, 390), new Vector2(1400, 36));
 
-            UIFactory.CreateText(panel, "GAME MODE", 18, UIFactory.Gold, TextAnchor.MiddleCenter,
+            UIFactory.CreateText(panel, L.T("lobby.language"), 16, UIFactory.Gold, TextAnchor.MiddleCenter,
+                new Vector2(820, 530), new Vector2(200, 24));
+            _languageChips = BuildChipRow(panel, new[] { "English", "Deutsch" },
+                new Vector2(820, 495), 90, 46, 10, idx => SelectLanguage((Language)idx));
+            HighlightChips(_languageChips, (int)L.Current);
+
+            UIFactory.CreateText(panel, L.T("lobby.gameMode"), 18, UIFactory.Gold, TextAnchor.MiddleCenter,
                 new Vector2(0, 335), new Vector2(400, 26));
-            _modeChips = BuildChipRow(panel, new[] { "Trivia Quiz", "Microgames", "Prompt & Vote", "Chosen One", "Sketch & Guess" },
+            _modeChips = BuildChipRow(panel, new[] { L.T("mode.trivia"), L.T("mode.microgames"), L.T("mode.promptVote"), L.T("mode.chosenOne"), L.T("mode.sketch") },
                 new Vector2(0, 288), 220, 64, 14, idx => SelectMode((GameMode)idx));
 
             _triviaSettingsGroup = BuildTriviaSettingsGroup(panel, 195);
-            _microgameSettingsGroup = BuildRoundsSettingsGroup(panel, 195, "Microgame Rounds", 2, 8, 1, _microgameRounds, v => _microgameRounds = v);
-            _voteSettingsGroup = BuildRoundsSettingsGroup(panel, 195, "Vote Prompts", 2, VotePrompts.All.Count, 1, _votePromptCount, v => _votePromptCount = v);
-            _soloSettingsGroup = BuildRoundsSettingsGroup(panel, 195, "Turns", 2, 12, 1, _soloTurns, v => _soloTurns = v);
-            _sketchSettingsGroup = BuildRoundsSettingsGroup(panel, 195, "Sketch Rounds", 2, 10, 1, _sketchRounds, v => _sketchRounds = v);
+            _microgameSettingsGroup = BuildRoundsSettingsGroup(panel, 195, L.T("stepper.microgameRounds"), 2, 8, 1, _microgameRounds, v => _microgameRounds = v);
+            _voteSettingsGroup = BuildRoundsSettingsGroup(panel, 195, L.T("stepper.votePrompts"), 2, VotePrompts.All.Count, 1, _votePromptCount, v => _votePromptCount = v);
+            _soloSettingsGroup = BuildRoundsSettingsGroup(panel, 195, L.T("stepper.turns"), 2, 12, 1, _soloTurns, v => _soloTurns = v);
+            _sketchSettingsGroup = BuildRoundsSettingsGroup(panel, 195, L.T("stepper.sketchRounds"), 2, 10, 1, _sketchRounds, v => _sketchRounds = v);
 
-            _lobbyPlayersText = UIFactory.CreateText(panel, "Waiting for players...", 30, UIFactory.Cream, TextAnchor.MiddleCenter,
+            _lobbyPlayersText = UIFactory.CreateText(panel, L.T("lobby.waiting"), 30, UIFactory.Cream, TextAnchor.MiddleCenter,
                 new Vector2(0, -90), new Vector2(1200, 260));
 
-            _startButton = UIFactory.CreateButton(panel, "Start Game", new Vector2(0, -400), new Vector2(360, 90));
+            _startButton = UIFactory.CreateButton(panel, L.T("lobby.startGame"), new Vector2(0, -400), new Vector2(360, 90));
             _startButton.onClick.AddListener(OnStartClicked);
             _startButton.gameObject.SetActive(false);
 
-            SelectMode(GameMode.Trivia);
+            SelectMode(_selectedMode);
             return panel;
         }
 
@@ -1044,14 +1080,14 @@ namespace JesBox.Game
         {
             var group = UIFactory.CreateGroup(parent, "TriviaSettings");
 
-            UIFactory.CreateText(group, "DIFFICULTY", 18, UIFactory.Gold, TextAnchor.MiddleCenter,
+            UIFactory.CreateText(group, L.T("difficulty.label"), 18, UIFactory.Gold, TextAnchor.MiddleCenter,
                 new Vector2(0, centerY + 40), new Vector2(400, 26));
-            _difficultyChips = BuildChipRow(group, new[] { "Easy", "Medium", "Hard" },
+            _difficultyChips = BuildChipRow(group, new[] { L.T("difficulty.easy"), L.T("difficulty.medium"), L.T("difficulty.hard") },
                 new Vector2(0, centerY), 220, 56, 16, idx => SelectDifficulty((Difficulty)idx));
 
-            UIFactory.CreateStepper(group, "Questions", new Vector2(-260, centerY - 110),
+            UIFactory.CreateStepper(group, L.T("stepper.questions"), new Vector2(-260, centerY - 110),
                 3, 10, 1, questionsPerGame, v => questionsPerGame = v);
-            UIFactory.CreateStepper(group, "Time Limit", new Vector2(260, centerY - 110),
+            UIFactory.CreateStepper(group, L.T("stepper.timeLimit"), new Vector2(260, centerY - 110),
                 5, 30, 5, Mathf.RoundToInt(questionTimeLimit), v => questionTimeLimit = v, "s");
 
             SelectDifficulty(_selectedDifficulty);
@@ -1219,11 +1255,11 @@ namespace JesBox.Game
         private RectTransform BuildFinalPanel(Transform parent)
         {
             var panel = UIFactory.CreateFullStretchPanel(parent, "FinalPanel", Color.clear);
-            UIFactory.CreateText(panel, "FINAL SCORES", 70, UIFactory.Gold, TextAnchor.MiddleCenter,
+            UIFactory.CreateText(panel, L.T("final.title"), 70, UIFactory.Gold, TextAnchor.MiddleCenter,
                 new Vector2(0, 380), new Vector2(1200, 100), FontStyle.Bold);
             _finalScoresText = UIFactory.CreateText(panel, "", 40, UIFactory.Cream, TextAnchor.MiddleCenter,
                 new Vector2(0, 0), new Vector2(1000, 600));
-            _backToMenuButton = UIFactory.CreateButton(panel, "Back to Main Menu", new Vector2(0, -420), new Vector2(420, 90));
+            _backToMenuButton = UIFactory.CreateButton(panel, L.T("final.backToMenu"), new Vector2(0, -420), new Vector2(420, 90));
             _backToMenuButton.onClick.AddListener(OnBackToMenuClicked);
             return panel;
         }
@@ -1242,9 +1278,9 @@ namespace JesBox.Game
 
         private void RefreshLobbyUI()
         {
-            _lobbyCodeText.text = $"ROOM CODE: {_roomCode}";
+            _lobbyCodeText.text = L.T("lobby.roomCode", _roomCode);
             _lobbyPlayersText.text = _players.Count == 0
-                ? "Waiting for players..."
+                ? L.T("lobby.waiting")
                 : string.Join("\n", _players.Values.Select(p => p.Name));
             _startButton.gameObject.SetActive(!_gameRunning && _players.Count > 0);
         }
@@ -1252,7 +1288,7 @@ namespace JesBox.Game
         private void ShowQuestionUI(TriviaQuestion q, int index, int total)
         {
             ShowOnly(_questionPanel);
-            _questionHeaderText.text = $"Question {index + 1} / {total}";
+            _questionHeaderText.text = L.T("question.header", index + 1, total);
             _questionBodyText.text = q.Question;
             string[] letters = { "A", "B", "C", "D" };
             _questionChoicesText.text = string.Join("\n", q.Choices.Select((c, i) => $"{letters[i]}) {c}"));
@@ -1261,7 +1297,7 @@ namespace JesBox.Game
         private void ShowVotePromptUI(VotePrompt prompt, int index, int total)
         {
             ShowOnly(_questionPanel);
-            _questionHeaderText.text = $"Vote! Prompt {index + 1} / {total}";
+            _questionHeaderText.text = L.T("vote.header", index + 1, total);
             _questionBodyText.text = prompt.Scenario;
             string[] letters = { "A", "B", "C", "D" };
             _questionChoicesText.text = string.Join("\n", prompt.Options.Select((o, i) => $"{letters[i]}) {o}"));
@@ -1278,7 +1314,7 @@ namespace JesBox.Game
         private void ShowMicrogameUI(MicrogameDef def, int index, int total)
         {
             ShowOnly(_microgamePanel);
-            _microgameHeaderText.text = $"Microgame {index + 1} / {total}";
+            _microgameHeaderText.text = L.T("microgame.header", index + 1, total);
             _microgameTitleText.text = def.Title;
             _microgameInstructionsText.text = def.Instructions;
         }
@@ -1293,10 +1329,10 @@ namespace JesBox.Game
         private void ShowSoloTurnUI(SoloGameDef def, string chosenName, int index, int total)
         {
             ShowOnly(_soloPanel);
-            _soloHeaderText.text = $"Chosen One — Turn {index + 1} / {total}";
-            _soloChosenNameText.text = $"{chosenName} is up!";
+            _soloHeaderText.text = L.T("solo.header", index + 1, total);
+            _soloChosenNameText.text = L.T("solo.isUp", chosenName);
             _soloTitleText.text = def.Title;
-            _soloInstructionsText.text = "Everyone else, cheer them on — watch the screen!";
+            _soloInstructionsText.text = L.T("solo.cheer");
         }
 
         private void UpdateSoloTimerUI(float duration)
@@ -1309,18 +1345,18 @@ namespace JesBox.Game
         private void ShowSketchDrawUI(string chosenName, int index, int total)
         {
             ShowOnly(_soloPanel);
-            _soloHeaderText.text = $"Sketch & Guess — Round {index + 1} / {total}";
-            _soloChosenNameText.text = $"{chosenName} is drawing...";
-            _soloTitleText.text = "Sketch That Verse";
-            _soloInstructionsText.text = "Watch the sketch appear — get ready to guess!";
+            _soloHeaderText.text = L.T("sketch.header", index + 1, total);
+            _soloChosenNameText.text = L.T("sketch.isDrawing", chosenName);
+            _soloTitleText.text = L.T("sketch.title");
+            _soloInstructionsText.text = L.T("sketch.watchHint");
         }
 
         private void ShowSketchGuessUI(string chosenName)
         {
             // Keep _soloPanel/_soloStage as-is so the finished drawing stays
             // visible while everyone guesses — just update the text above it.
-            _soloChosenNameText.text = $"What did {chosenName} draw?";
-            _soloInstructionsText.text = "Guess on your phone!";
+            _soloChosenNameText.text = L.T("sketch.whatDidDraw", chosenName);
+            _soloInstructionsText.text = L.T("sketch.guessOnPhone");
         }
 
         private void SetupSoloStage(SoloGameKind kind)

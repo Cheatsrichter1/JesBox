@@ -1,8 +1,10 @@
 import React from 'react';
+import { useLanguage } from '../i18n.jsx';
 
 const LETTERS = ['A', 'B', 'C', 'D'];
 
 export default function VoteRevealScreen({ game, playerId }) {
+  const { t } = useLanguage();
   if (!game) return null;
   const { tally = [], favoriteIndex = -1, players = [] } = game;
   const me = players.find((p) => p.id === playerId);
@@ -12,7 +14,7 @@ export default function VoteRevealScreen({ game, playerId }) {
   return (
     <div className="screen">
       <p className="result-banner">
-        {favoriteIndex >= 0 ? `Crowd favorite: ${LETTERS[favoriteIndex]}` : 'No votes cast!'}
+        {favoriteIndex >= 0 ? t('voteReveal.crowdFavorite', { letter: LETTERS[favoriteIndex] }) : t('voteReveal.noVotes')}
       </p>
 
       <div className="vote-tally">
@@ -32,7 +34,7 @@ export default function VoteRevealScreen({ game, playerId }) {
 
       {me && (
         <p className="score-line">
-          {me.delta > 0 ? `+${me.delta} points — ` : ''}Total: {me.score}
+          {me.delta > 0 ? t('reveal.pointsPrefix', { delta: me.delta }) : ''}{t('reveal.total', { score: me.score })}
         </p>
       )}
 
