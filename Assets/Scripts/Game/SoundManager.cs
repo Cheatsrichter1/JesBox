@@ -31,6 +31,9 @@ namespace JesBox.Game
         public void PlayCountdownBeep() => Play(Tone("countdown", new[] { 1200f }, 0.08f));
         public void PlayReveal() => Play(Tone("reveal", new[] { 660f, 880f, 1100f }, 0.35f));
         public void PlayVictoryFanfare() => Play(Tone("victory", new[] { 523f, 659f, 784f, 1047f }, 0.8f));
+        public void PlayGo() => Play(Tone("go", new[] { 520f, 1040f }, 0.16f));
+        public void PlaySuccessStamp() => Play(Tone("success", new[] { 784f, 1047f, 1319f }, 0.3f));
+        public void PlayFailStamp() => Play(Tone("fail", new[] { 220f, 160f }, 0.3f));
 
         private void Play(AudioClip clip)
         {

@@ -162,6 +162,7 @@ namespace JesBox.Net
         public string kind;
         public string title;
         public string controllerInstructions;
+        public string verb;
         public float duration;
     }
 

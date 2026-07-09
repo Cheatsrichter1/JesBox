@@ -75,6 +75,11 @@ namespace JesBox.Game
         private bool _soloRoundOver;
         private bool _soloWon;
         private bool _inSketchTurn;
+        // Scales up each Chosen One turn (fall/target speed, shrinking duration)
+        // so the whole mode ramps up in intensity like a real WarioWare set.
+        private float _soloIntensity = 1f;
+        private const float SoloIntroDuration = 0.55f;
+        private const float SoloStampDuration = 0.5f;
 
         // Fiery Furnace Dash
         private int _soloLane;
@@ -159,6 +164,8 @@ namespace JesBox.Game
         private Text _soloHeaderText, _soloChosenNameText, _soloTitleText, _soloInstructionsText, _soloTimerText;
         private Image _soloTimerFill;
         private RectTransform _soloStage;
+        private Text _soloVerbText;
+        private Image _flashOverlay;
 
         private void Awake()
         {
@@ -666,7 +673,6 @@ namespace JesBox.Game
         {
             _currentChosenId = chosenId;
             _currentSoloKind = def.Kind;
-            _currentRemaining = def.Duration;
             _soloRoundOver = false;
             _soloWon = false;
             _soloLane = 1;
@@ -679,7 +685,24 @@ namespace JesBox.Game
             _soloPartingCount = 0;
             _soloPartingLastDir = 0;
 
+            // Every turn ramps up a little — faster flames/targets and a
+            // shrinking window, like a WarioWare set speeding up as it goes.
+            _soloIntensity = Mathf.Min(1f + index * 0.15f, 1.9f);
+            float duration = Mathf.Max(def.Duration * (1f - index * 0.06f), def.Duration * 0.65f);
+            _currentRemaining = duration;
+
             string chosenName = _players[chosenId].Name;
+
+            ShowSoloTurnUI(def, chosenName, index, total);
+            _soloStage.anchoredPosition = SoloStageDefaultPos;
+            _soloStage.sizeDelta = SoloStageDefaultSize;
+            _soloStage.localScale = Vector3.one;
+            SetupSoloStage(def.Kind);
+
+            // Verb flash + stage punch-in beat — the stage is set up but not
+            // yet ticking, and the phone hasn't been told to start yet either,
+            // so this doesn't cost the player any reaction time.
+            yield return PlaySoloIntro(def);
 
             _net.SendJson(new GameOut<SoloTurnPayload>
             {
@@ -692,21 +715,17 @@ namespace JesBox.Game
                     kind = def.Kind.ToString(),
                     title = def.Title,
                     controllerInstructions = def.ControllerInstructions,
-                    duration = def.Duration
+                    verb = def.Verb,
+                    duration = duration
                 }
             });
 
-            ShowSoloTurnUI(def, chosenName, index, total);
-            _soloStage.anchoredPosition = SoloStageDefaultPos;
-            _soloStage.sizeDelta = SoloStageDefaultSize;
-            SetupSoloStage(def.Kind);
-
             float elapsed = 0f;
-            while (elapsed < def.Duration && !_soloRoundOver)
+            while (elapsed < duration && !_soloRoundOver)
             {
                 elapsed += Time.deltaTime;
-                _currentRemaining = Mathf.Max(0f, def.Duration - elapsed);
-                UpdateSoloTimerUI(def.Duration);
+                _currentRemaining = Mathf.Max(0f, duration - elapsed);
+                UpdateSoloTimerUI(duration);
                 TickSoloGame(def.Kind, Time.deltaTime);
                 yield return null;
             }
@@ -717,6 +736,9 @@ namespace JesBox.Game
             {
                 _soloWon = true;
             }
+
+            // Instant win/fail judgment stamp before cutting to the scoreboard.
+            yield return PlaySoloStamp(_soloWon);
 
             ClearSoloStage();
             _currentChosenId = null;
@@ -979,7 +1001,7 @@ namespace JesBox.Game
 
             var obstacle = _soloObstacles[0];
             var pos = obstacle.Rt.anchoredPosition;
-            pos.y -= SoloFurnaceFallSpeed * dt;
+            pos.y -= SoloFurnaceFallSpeed * _soloIntensity * dt;
             obstacle.Rt.anchoredPosition = pos;
 
             if (pos.y <= SoloPlayerY + 20f && pos.y > SoloPlayerY - 40f && obstacle.Lane == _soloLane)
@@ -1025,7 +1047,7 @@ namespace JesBox.Game
 
         private void TickMovingTarget(float dt)
         {
-            const float speed = 2.4f;
+            float speed = 2.4f * _soloIntensity;
             _soloTargetTime += dt;
             _soloTargetX = SoloTargetAmplitude * Mathf.Sin(_soloTargetTime * speed);
             if (_soloTargetMarker != null)
@@ -1194,6 +1216,12 @@ namespace JesBox.Game
             _soloPanel = BuildSoloPanel(_canvasRoot);
             _revealPanel = BuildRevealPanel(_canvasRoot);
             _finalPanel = BuildFinalPanel(_canvasRoot);
+
+            // On top of every panel — used for the quick WarioWare-style
+            // screen-flash beats around Chosen One's verb intro/win-fail stamp.
+            var flashRt = UIFactory.CreateFullStretchPanel(_canvasRoot, "FlashOverlay", new Color(1f, 1f, 1f, 0f));
+            _flashOverlay = flashRt.GetComponent<Image>();
+            _flashOverlay.raycastTarget = false;
         }
 
         private void SelectLanguage(Language lang)
@@ -1237,7 +1265,7 @@ namespace JesBox.Game
             qrRt.SetParent(panel, false);
             qrRt.anchorMin = new Vector2(0.5f, 0.5f);
             qrRt.anchorMax = new Vector2(0.5f, 0.5f);
-            qrRt.anchoredPosition = new Vector2(-820, 460);
+            qrRt.anchoredPosition = new Vector2(-820, 360);
             qrRt.sizeDelta = new Vector2(200, 200);
 
             UIFactory.CreateText(panel, L.T("lobby.gameMode"), 18, UIFactory.Gold, TextAnchor.MiddleCenter,
@@ -1426,6 +1454,13 @@ namespace JesBox.Game
             var (timerText, fill) = BuildTimerWidget(panel, -310);
             _soloTimerText = timerText;
             _soloTimerFill = fill;
+
+            // WarioWare-style verb flash ("DODGE!", "FIRE!", ...) and win/fail
+            // stamp ("✓"/"✗") — created after the stage so it renders on top,
+            // hidden until PlaySoloIntro/PlaySoloStamp activates it.
+            _soloVerbText = UIFactory.CreateText(panel, "", 120, UIFactory.Gold, TextAnchor.MiddleCenter,
+                new Vector2(0, -40), new Vector2(900, 300), FontStyle.Bold);
+            _soloVerbText.gameObject.SetActive(false);
 
             return panel;
         }
@@ -1715,6 +1750,88 @@ namespace JesBox.Game
             target.color = flashColor;
             yield return new WaitForSeconds(0.15f);
             if (target != null) target.color = original;
+        }
+
+        // ---- WarioWare-style beats: verb intro + win/fail stamp ----
+
+        /// <summary>Quick punch/pop scale animation: from -> peak -> to.</summary>
+        private IEnumerator PunchScale(RectTransform rt, float from, float peak, float to, float duration)
+        {
+            float upTime = duration * 0.4f;
+            float downTime = duration - upTime;
+            rt.localScale = Vector3.one * from;
+
+            float t = 0f;
+            while (t < upTime)
+            {
+                t += Time.deltaTime;
+                rt.localScale = Vector3.one * Mathf.Lerp(from, peak, Mathf.Clamp01(t / upTime));
+                yield return null;
+            }
+
+            t = 0f;
+            while (t < downTime)
+            {
+                t += Time.deltaTime;
+                rt.localScale = Vector3.one * Mathf.Lerp(peak, to, Mathf.Clamp01(t / downTime));
+                yield return null;
+            }
+            rt.localScale = Vector3.one * to;
+        }
+
+        /// <summary>Brief full-screen color flash — a quick fade up then back to clear.</summary>
+        private IEnumerator FlashScreenRoutine(Color color, float peakAlpha, float duration)
+        {
+            if (_flashOverlay == null) yield break;
+            float half = duration * 0.5f;
+
+            float t = 0f;
+            while (t < half)
+            {
+                t += Time.deltaTime;
+                _flashOverlay.color = new Color(color.r, color.g, color.b, Mathf.Lerp(0f, peakAlpha, t / half));
+                yield return null;
+            }
+            t = 0f;
+            while (t < half)
+            {
+                t += Time.deltaTime;
+                _flashOverlay.color = new Color(color.r, color.g, color.b, Mathf.Lerp(peakAlpha, 0f, t / half));
+                yield return null;
+            }
+            _flashOverlay.color = new Color(color.r, color.g, color.b, 0f);
+        }
+
+        /// <summary>Flashes the round's command ("DODGE!", "FIRE!", ...) big and
+        /// bold before gameplay actually starts — the stage is already set up
+        /// but not yet ticking, so nothing moves during this beat.</summary>
+        private IEnumerator PlaySoloIntro(SoloGameDef def)
+        {
+            _soloVerbText.text = def.Verb;
+            _soloVerbText.color = UIFactory.Gold;
+            _soloVerbText.gameObject.SetActive(true);
+            _sound.PlayGo();
+            StartCoroutine(FlashScreenRoutine(Color.white, 0.35f, 0.25f));
+            StartCoroutine(PunchScale(_soloStage, 0.85f, 1.05f, 1f, 0.35f));
+
+            yield return PunchScale(_soloVerbText.rectTransform, 0.4f, 1.25f, 1f, SoloIntroDuration);
+            yield return new WaitForSeconds(0.15f);
+            _soloVerbText.gameObject.SetActive(false);
+        }
+
+        /// <summary>Big instant win/fail judgment stamp shown right after the
+        /// round ends, before cutting to the scoreboard reveal.</summary>
+        private IEnumerator PlaySoloStamp(bool won)
+        {
+            _soloVerbText.text = won ? "✓" : "✗";
+            _soloVerbText.color = won ? UIFactory.Gold : new Color(0.85f, 0.25f, 0.2f);
+            _soloVerbText.gameObject.SetActive(true);
+            if (won) _sound.PlaySuccessStamp(); else _sound.PlayFailStamp();
+            StartCoroutine(FlashScreenRoutine(won ? UIFactory.Gold : new Color(0.85f, 0.2f, 0.2f), 0.3f, 0.3f));
+
+            yield return PunchScale(_soloVerbText.rectTransform, 0.3f, 1.3f, 1f, SoloStampDuration);
+            yield return new WaitForSeconds(0.35f);
+            _soloVerbText.gameObject.SetActive(false);
         }
 
         private void ShowRevealUI(string bannerText, List<PlayerPublic> players)

@@ -107,6 +107,7 @@ export default function SoloTurnScreen({ game, playerId, onMove, onFire, onShake
       <div className="timer-track">
         <div key={game.index} className="timer-fill" style={{ animationDuration: `${game.duration}s` }} />
       </div>
+      {game.verb && <p key={game.index} className="solo-verb-pop">{game.verb}</p>}
       <p className="question-text">{game.title}</p>
       <p className="subtitle">{game.controllerInstructions}</p>
       <p className="solo-watch-hint">{t('solo.watchHint')}</p>
