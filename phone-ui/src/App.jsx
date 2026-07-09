@@ -11,6 +11,8 @@ import VoteRevealScreen from './components/VoteRevealScreen.jsx';
 import SoloTurnScreen from './components/SoloTurnScreen.jsx';
 import SketchDrawScreen from './components/SketchDrawScreen.jsx';
 import SketchGuessScreen from './components/SketchGuessScreen.jsx';
+import CharadeTurnScreen from './components/CharadeTurnScreen.jsx';
+import CharadeGuessScreen from './components/CharadeGuessScreen.jsx';
 import LanguageToggle from './components/LanguageToggle.jsx';
 import { LanguageProvider, useLanguage } from './i18n.jsx';
 
@@ -24,7 +26,8 @@ function AppInner() {
 
   // 'join' | 'connecting' | 'lobby' | 'question' | 'reveal' | 'microgame' |
   // 'microgame_reveal' | 'vote_prompt' | 'vote_reveal' | 'solo_turn' |
-  // 'solo_reveal' | 'sketch_draw' | 'sketch_guess' | 'final'
+  // 'solo_reveal' | 'sketch_draw' | 'sketch_guess' | 'charade_turn' |
+  // 'charade_guess' | 'final'
   const [screen, setScreen] = useState('join');
   const [error, setError] = useState('');
   const [playerId, setPlayerId] = useState(null);
@@ -32,6 +35,7 @@ function AppInner() {
   const [game, setGame] = useState(null); // last { phase, ... } payload from host
   const [selectedChoice, setSelectedChoice] = useState(null);
   const [secretAnswer, setSecretAnswer] = useState(null); // Sketch That Verse: only set on the artist's phone
+  const [charadeSecret, setCharadeSecret] = useState(null); // Bible Charades: only set on the performer's phone
   const wsRef = useRef(null);
 
   const handleMessage = useCallback((raw) => {
@@ -62,9 +66,16 @@ function AppInner() {
           setSecretAnswer(data.answer);
           break;
         }
+        if (data.phase === 'charade_secret') {
+          // Targeted-only message (game_to) — only the performer's phone
+          // ever receives this. Store it without touching `game`/`screen`.
+          setCharadeSecret(data);
+          break;
+        }
         setGame(data);
-        if (data.phase === 'question' || data.phase === 'vote_prompt' || data.phase === 'sketch_guess') setSelectedChoice(null);
+        if (data.phase === 'question' || data.phase === 'vote_prompt' || data.phase === 'sketch_guess' || data.phase === 'charade_guess') setSelectedChoice(null);
         if (data.phase === 'sketch_draw') setSecretAnswer(null);
+        if (data.phase === 'charade_turn') setCharadeSecret(null);
         if (data.phase) setScreen(data.phase);
         break;
       }
@@ -193,6 +204,12 @@ function AppInner() {
       break;
     case 'sketch_guess':
       content = <SketchGuessScreen game={game} playerId={playerId} selectedChoice={selectedChoice} onAnswer={answer} />;
+      break;
+    case 'charade_turn':
+      content = <CharadeTurnScreen game={game} playerId={playerId} secret={charadeSecret} />;
+      break;
+    case 'charade_guess':
+      content = <CharadeGuessScreen game={game} playerId={playerId} selectedChoice={selectedChoice} onAnswer={answer} />;
       break;
     case 'final':
       content = <FinalScreen game={game} playerId={playerId} />;

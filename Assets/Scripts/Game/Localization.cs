@@ -34,6 +34,7 @@ namespace JesBox.Game
             ["mode.promptVote"] = new[] { "Prompt & Vote", "Abstimmung" },
             ["mode.chosenOne"] = new[] { "Chosen One", "Auserwählter" },
             ["mode.sketch"] = new[] { "Sketch & Guess", "Zeichnen & Raten" },
+            ["mode.charades"] = new[] { "Bible Charades", "Bibel-Scharade" },
 
             ["difficulty.label"] = new[] { "DIFFICULTY", "SCHWIERIGKEIT" },
             ["difficulty.easy"] = new[] { "Easy", "Leicht" },
@@ -46,6 +47,7 @@ namespace JesBox.Game
             ["stepper.votePrompts"] = new[] { "Vote Prompts", "Abstimmungen" },
             ["stepper.turns"] = new[] { "Turns", "Runden" },
             ["stepper.sketchRounds"] = new[] { "Sketch Rounds", "Zeichenrunden" },
+            ["stepper.charadeRounds"] = new[] { "Charade Rounds", "Scharade-Runden" },
 
             ["final.title"] = new[] { "FINAL SCORES", "ENDERGEBNIS" },
             ["final.backToMenu"] = new[] { "Back to Main Menu", "Zurück zum Hauptmenü" },
@@ -75,6 +77,27 @@ namespace JesBox.Game
                 "{0} drew \"{1}\" — {2}/{3} guessed it! (+{4})",
                 "{0} zeichnete \"{1}\" — {2}/{3} haben es erraten! (+{4})"
             },
+
+            ["charade.header"] = new[] { "Bible Charades — Round {0} / {1}", "Bibel-Scharade — Runde {0} / {1}" },
+            ["charade.actInstructions"] = new[]
+            {
+                "🤫 ACT IT OUT — no talking or pointing at objects! Everyone else, shout your guesses!",
+                "🤫 SCHAUSPIELERN — nicht sprechen oder auf Gegenstände zeigen! Alle anderen, ruft eure Vermutungen!"
+            },
+            ["charade.describeInstructions"] = new[]
+            {
+                "🗣️ DESCRIBE IT — can't say the secret words! Everyone else, shout your guesses!",
+                "🗣️ BESCHREIBEN — die geheimen Wörter dürfen nicht fallen! Alle anderen, ruft eure Vermutungen!"
+            },
+            ["charade.whatActed"] = new[] { "What did {0} act out?", "Was hat {0} vorgespielt?" },
+            ["charade.whatDescribed"] = new[] { "What did {0} describe?", "Was hat {0} beschrieben?" },
+            ["charade.result"] = new[]
+            {
+                "{0} needed everyone to guess \"{1}\" — {2}/{3} got it! (+{4})",
+                "{0} brauchte die Hilfe aller, um \"{1}\" zu erraten — {2}/{3} haben es geschafft! (+{4})"
+            },
+
+            ["lobby.scanToJoin"] = new[] { "Scan to join!", "Zum Beitreten scannen!" },
         };
 
         public static string T(string key)

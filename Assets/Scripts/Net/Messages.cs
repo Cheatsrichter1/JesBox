@@ -201,4 +201,38 @@ namespace JesBox.Net
         public List<string> choices;
         public float timeLimit;
     }
+
+    // Bible Charades: same broadcast/targeted-secret/guess/reveal shape as
+    // Sketch & Guess, but the "performance" happens live in the room instead
+    // of on a canvas — the chosen player's phone just displays the secret
+    // (and, for "describe" rounds, the taboo words), nothing streams to the TV.
+    public class CharadeTurnPayload
+    {
+        public string phase = "charade_turn";
+        public int index;
+        public int total;
+        public string chosenId;
+        public string chosenName;
+        public string charadeType; // "act" | "describe"
+        public float duration;
+    }
+
+    public class CharadeSecretPayload
+    {
+        public string phase = "charade_secret";
+        public string prompt;
+        public List<string> forbidden;
+        public string charadeType;
+    }
+
+    public class CharadeGuessPayload
+    {
+        public string phase = "charade_guess";
+        public int index;
+        public int total;
+        public string chosenId;
+        public string chosenName;
+        public List<string> choices;
+        public float timeLimit;
+    }
 }

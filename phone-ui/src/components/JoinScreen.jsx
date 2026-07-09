@@ -1,10 +1,19 @@
 import React, { useState } from 'react';
 import { useLanguage } from '../i18n.jsx';
 
+function codeFromUrl() {
+  try {
+    const params = new URLSearchParams(window.location.search);
+    return (params.get('code') || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 4);
+  } catch {
+    return '';
+  }
+}
+
 export default function JoinScreen({ onJoin, error }) {
   const { t } = useLanguage();
   const [name, setName] = useState('');
-  const [code, setCode] = useState('');
+  const [code, setCode] = useState(codeFromUrl);
 
   const canSubmit = name.trim().length > 0 && code.trim().length === 4;
 

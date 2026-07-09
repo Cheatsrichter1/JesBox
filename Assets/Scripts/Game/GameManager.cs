@@ -7,6 +7,7 @@ using Newtonsoft.Json;
 using UnityEngine;
 using UnityEngine.EventSystems;
 using UnityEngine.InputSystem.UI;
+using UnityEngine.Networking;
 using UnityEngine.UI;
 
 namespace JesBox.Game
@@ -27,7 +28,8 @@ namespace JesBox.Game
         [SerializeField] private int questionsPerGame = 5;
         [SerializeField] private float revealDuration = 5f;
 
-        private enum GameMode { Trivia, Microgames, PromptVote, ChosenOne, Sketch }
+        private enum GameMode { Trivia, Microgames, PromptVote, ChosenOne, Sketch, Charades }
+        private enum CharadeType { Act, Describe }
 
         private class PlayerState
         {
@@ -58,6 +60,7 @@ namespace JesBox.Game
         private int _votePromptCount = 5;
         private int _soloTurns = 6;
         private int _sketchRounds = 5;
+        private int _charadeRounds = 6;
 
         // Chosen One (solo spotlight) live state — every game here is a single
         // quick pass/fail challenge (WarioWare style), not a scored timer.
@@ -122,15 +125,30 @@ namespace JesBox.Game
 
         private const float SoloRevealDuration = 2.2f;
 
+        // Bible Charades: same broadcast/secret/guess/reveal shape as Sketch &
+        // Guess (see RunSketchTurn), but nothing streams to the TV — the
+        // performance happens live in the room, and the chosen player's phone
+        // just displays the secret.
+        private const float CharadeDuration = 45f;
+        private const float CharadeGuessDuration = 10f;
+        private const int CharadeGuesserPoints = 500;
+        private const int CharadeArtistPointsPerGuesser = 150;
+
+        // Sound
+        private SoundManager _sound;
+        private int _lastCountdownBeepSecond = -1;
+
         // UI references
         private Transform _canvasRoot;
         private RectTransform _lobbyPanel, _questionPanel, _microgamePanel, _revealPanel, _finalPanel, _soloPanel;
-        private RectTransform _triviaSettingsGroup, _microgameSettingsGroup, _voteSettingsGroup, _soloSettingsGroup, _sketchSettingsGroup;
+        private RectTransform _triviaSettingsGroup, _microgameSettingsGroup, _voteSettingsGroup, _soloSettingsGroup, _sketchSettingsGroup, _charadeSettingsGroup;
         private Text _lobbyCodeText, _lobbyPlayersText;
         private Button _startButton;
         private Dictionary<int, Button> _modeChips;
         private Dictionary<int, Button> _difficultyChips;
         private Dictionary<int, Button> _languageChips;
+        private RawImage _qrImage;
+        private Texture2D _qrTexture;
         private Text _questionHeaderText, _questionBodyText, _questionChoicesText, _questionTimerText;
         private Image _questionTimerFill;
         private Text _microgameHeaderText, _microgameTitleText, _microgameInstructionsText, _microgameTimerText;
@@ -149,6 +167,8 @@ namespace JesBox.Game
             _net.OnTextMessage += HandleMessage;
             _net.OnError += err => Debug.LogWarning($"[JesBox] Socket error: {err}");
             _net.OnClose += () => Debug.LogWarning("[JesBox] Socket closed.");
+
+            _sound = gameObject.AddComponent<SoundManager>();
 
             EnsureEventSystem();
             BuildUI();
@@ -176,6 +196,34 @@ namespace JesBox.Game
             return url;
         }
 
+        // ---- QR code (join link, encoding roomCode as a ?code= query param
+        // the phone's JoinScreen reads on load) ----
+
+        private void ApplyOrFetchQr()
+        {
+            if (_qrImage == null) return;
+            if (_qrTexture != null) { _qrImage.texture = _qrTexture; return; }
+            if (_roomCode != "----") StartCoroutine(FetchQrCode($"{JoinUrlHint()}/?code={_roomCode}"));
+        }
+
+        private IEnumerator FetchQrCode(string joinUrl)
+        {
+            string apiUrl = "https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=" + UnityWebRequest.EscapeURL(joinUrl);
+            using (var req = UnityWebRequestTexture.GetTexture(apiUrl))
+            {
+                yield return req.SendWebRequest();
+                if (req.result == UnityWebRequest.Result.Success)
+                {
+                    _qrTexture = DownloadHandlerTexture.GetContent(req);
+                    if (_qrImage != null) _qrImage.texture = _qrTexture;
+                }
+                else
+                {
+                    Debug.LogWarning($"[JesBox] QR code fetch failed: {req.error}");
+                }
+            }
+        }
+
         // ---- Networking ----
 
         private void HandleOpen()
@@ -195,6 +243,7 @@ namespace JesBox.Game
                 case "room_created":
                     _roomCode = JsonConvert.DeserializeObject<RoomCreatedIn>(raw).roomCode;
                     RefreshLobbyUI();
+                    ApplyOrFetchQr();
                     break;
 
                 case "player_joined":
@@ -203,6 +252,7 @@ namespace JesBox.Game
                     _players[joined.playerId] = new PlayerState { Name = joined.name, Score = 0 };
                     RefreshLobbyUI();
                     BroadcastLobby();
+                    _sound.PlayJoin();
                     break;
                 }
 
@@ -283,6 +333,7 @@ namespace JesBox.Game
             if (_gameRunning || _players.Count == 0) return;
             _gameRunning = true;
             _startButton.gameObject.SetActive(false);
+            _sound.PlayRoundStart();
 
             switch (_selectedMode)
             {
@@ -291,6 +342,7 @@ namespace JesBox.Game
                 case GameMode.PromptVote: StartCoroutine(RunPromptVote()); break;
                 case GameMode.ChosenOne: StartCoroutine(RunChosenOne()); break;
                 case GameMode.Sketch: StartCoroutine(RunSketchGame()); break;
+                case GameMode.Charades: StartCoroutine(RunCharadesGame()); break;
             }
         }
 
@@ -789,6 +841,127 @@ namespace JesBox.Game
             yield return new WaitForSeconds(SoloRevealDuration);
         }
 
+        // ---- Game flow: Bible Charades ----
+
+        private IEnumerator RunCharadesGame()
+        {
+            var bag = new List<string>();
+
+            for (int i = 0; i < _charadeRounds; i++)
+            {
+                string chosenId = PopNextChosenPlayer(bag);
+                if (chosenId == null) break; // everyone left
+
+                yield return RunCharadeTurn(chosenId, i, _charadeRounds);
+            }
+
+            FinishGame();
+        }
+
+        private IEnumerator RunCharadeTurn(string chosenId, int index, int total)
+        {
+            _currentChosenId = chosenId;
+            string chosenName = _players[chosenId].Name;
+            var prompt = CharadePrompts.All[Random.Range(0, CharadePrompts.All.Count)];
+            var type = Random.value < 0.5f ? CharadeType.Act : CharadeType.Describe;
+            string typeStr = type == CharadeType.Act ? "act" : "describe";
+
+            _soloStage.anchoredPosition = SoloStageDefaultPos;
+            _soloStage.sizeDelta = SoloStageDefaultSize;
+
+            const float duration = CharadeDuration;
+            _currentRemaining = duration;
+
+            _net.SendJson(new GameOut<CharadeTurnPayload>
+            {
+                data = new CharadeTurnPayload { index = index, total = total, chosenId = chosenId, chosenName = chosenName, charadeType = typeStr, duration = duration }
+            });
+            _net.SendJson(new GameToOut<CharadeSecretPayload>
+            {
+                playerId = chosenId,
+                data = new CharadeSecretPayload
+                {
+                    prompt = prompt.Prompt,
+                    forbidden = type == CharadeType.Describe ? new List<string>(prompt.Forbidden) : new List<string>(),
+                    charadeType = typeStr
+                }
+            });
+
+            ShowCharadeTurnUI(chosenName, type, index, total);
+
+            float elapsed = 0f;
+            while (elapsed < duration)
+            {
+                elapsed += Time.deltaTime;
+                _currentRemaining = Mathf.Max(0f, duration - elapsed);
+                UpdateSoloTimerUI(duration);
+                yield return null;
+            }
+
+            // ---- Guess phase: everyone but the performer picks from 4
+            // options. Reuses _answersThisRound/"answer" — same shape as
+            // trivia/sketch guesses.
+            _answersThisRound.Clear();
+            _currentRemaining = CharadeGuessDuration;
+
+            _net.SendJson(new GameOut<CharadeGuessPayload>
+            {
+                data = new CharadeGuessPayload
+                {
+                    index = index,
+                    total = total,
+                    chosenId = chosenId,
+                    chosenName = chosenName,
+                    choices = new List<string>(prompt.Choices),
+                    timeLimit = CharadeGuessDuration
+                }
+            });
+            ShowCharadeGuessUI(chosenName, type);
+
+            int guesserCount = Mathf.Max(0, _players.Count - 1);
+            elapsed = 0f;
+            while (elapsed < CharadeGuessDuration && _answersThisRound.Count < guesserCount)
+            {
+                elapsed += Time.deltaTime;
+                _currentRemaining = Mathf.Max(0f, CharadeGuessDuration - elapsed);
+                UpdateSoloTimerUI(CharadeGuessDuration);
+                yield return null;
+            }
+
+            _currentChosenId = null;
+
+            if (!_players.TryGetValue(chosenId, out var chosenPlayer))
+            {
+                // Performer disconnected mid-turn; skip scoring and move on.
+                yield break;
+            }
+
+            var deltas = new Dictionary<string, int>();
+            foreach (var kv in _players) deltas[kv.Key] = 0;
+
+            int correctCount = 0;
+            foreach (var kv in _answersThisRound)
+            {
+                if (kv.Key == chosenId || !_players.TryGetValue(kv.Key, out var guesser)) continue;
+                if (kv.Value.Choice != prompt.CorrectIndex) continue;
+
+                correctCount++;
+                guesser.Score += CharadeGuesserPoints;
+                deltas[kv.Key] = CharadeGuesserPoints;
+            }
+
+            int bonus = CharadeArtistPointsPerGuesser * correctCount;
+            chosenPlayer.Score += bonus;
+            deltas[chosenId] = bonus;
+
+            string resultText = L.T("charade.result", chosenName, prompt.Prompt, correctCount, guesserCount, bonus);
+            var publicList = PublicList(deltas);
+            _net.SendJson(new GameOut<SoloRevealPayload> { data = new SoloRevealPayload { title = resultText, players = publicList } });
+            ShowRevealUI(resultText, publicList);
+
+            yield return new WaitForSeconds(SoloRevealDuration);
+        }
+
         private void TickSoloGame(SoloGameKind kind, float dt)
         {
             if (kind == SoloGameKind.FieryFurnaceDash) TickFurnaceDash(dt);
@@ -1035,6 +1208,7 @@ namespace JesBox.Game
             _lobbyPanel = BuildLobbyPanel(_canvasRoot);
             ShowOnly(_lobbyPanel);
             RefreshLobbyUI();
+            ApplyOrFetchQr();
         }
 
         private RectTransform BuildLobbyPanel(Transform parent)
@@ -1054,16 +1228,29 @@ namespace JesBox.Game
                 new Vector2(820, 495), 90, 46, 10, idx => SelectLanguage((Language)idx));
             HighlightChips(_languageChips, (int)L.Current);
 
+            UIFactory.CreateText(panel, L.T("lobby.scanToJoin"), 16, UIFactory.Gold, TextAnchor.MiddleCenter,
+                new Vector2(-820, 570), new Vector2(220, 24));
+            var qrGo = new GameObject("QrCode", typeof(RawImage));
+            _qrImage = qrGo.GetComponent<RawImage>();
+            _qrImage.color = new Color(1f, 1f, 1f, 0.85f);
+            var qrRt = _qrImage.rectTransform;
+            qrRt.SetParent(panel, false);
+            qrRt.anchorMin = new Vector2(0.5f, 0.5f);
+            qrRt.anchorMax = new Vector2(0.5f, 0.5f);
+            qrRt.anchoredPosition = new Vector2(-820, 460);
+            qrRt.sizeDelta = new Vector2(200, 200);
+
             UIFactory.CreateText(panel, L.T("lobby.gameMode"), 18, UIFactory.Gold, TextAnchor.MiddleCenter,
                 new Vector2(0, 335), new Vector2(400, 26));
-            _modeChips = BuildChipRow(panel, new[] { L.T("mode.trivia"), L.T("mode.microgames"), L.T("mode.promptVote"), L.T("mode.chosenOne"), L.T("mode.sketch") },
-                new Vector2(0, 288), 220, 64, 14, idx => SelectMode((GameMode)idx));
+            _modeChips = BuildChipRow(panel, new[] { L.T("mode.trivia"), L.T("mode.microgames"), L.T("mode.promptVote"), L.T("mode.chosenOne"), L.T("mode.sketch"), L.T("mode.charades") },
+                new Vector2(0, 288), 190, 64, 10, idx => SelectMode((GameMode)idx));
 
             _triviaSettingsGroup = BuildTriviaSettingsGroup(panel, 195);
             _microgameSettingsGroup = BuildRoundsSettingsGroup(panel, 195, L.T("stepper.microgameRounds"), 2, 8, 1, _microgameRounds, v => _microgameRounds = v);
             _voteSettingsGroup = BuildRoundsSettingsGroup(panel, 195, L.T("stepper.votePrompts"), 2, VotePrompts.All.Count, 1, _votePromptCount, v => _votePromptCount = v);
             _soloSettingsGroup = BuildRoundsSettingsGroup(panel, 195, L.T("stepper.turns"), 2, 12, 1, _soloTurns, v => _soloTurns = v);
             _sketchSettingsGroup = BuildRoundsSettingsGroup(panel, 195, L.T("stepper.sketchRounds"), 2, 10, 1, _sketchRounds, v => _sketchRounds = v);
+            _charadeSettingsGroup = BuildRoundsSettingsGroup(panel, 195, L.T("stepper.charadeRounds"), 2, 10, 1, _charadeRounds, v => _charadeRounds = v);
 
             _lobbyPlayersText = UIFactory.CreateText(panel, L.T("lobby.waiting"), 30, UIFactory.Cream, TextAnchor.MiddleCenter,
                 new Vector2(0, -90), new Vector2(1200, 260));
@@ -1142,6 +1329,7 @@ namespace JesBox.Game
             _voteSettingsGroup.gameObject.SetActive(mode == GameMode.PromptVote);
             _soloSettingsGroup.gameObject.SetActive(mode == GameMode.ChosenOne);
             _sketchSettingsGroup.gameObject.SetActive(mode == GameMode.Sketch);
+            _charadeSettingsGroup.gameObject.SetActive(mode == GameMode.Charades);
         }
 
         private void SelectDifficulty(Difficulty difficulty)
@@ -1288,6 +1476,7 @@ namespace JesBox.Game
         private void ShowQuestionUI(TriviaQuestion q, int index, int total)
         {
             ShowOnly(_questionPanel);
+            _sound.PlayTick();
             _questionHeaderText.text = L.T("question.header", index + 1, total);
             _questionBodyText.text = q.Question;
             string[] letters = { "A", "B", "C", "D" };
@@ -1297,6 +1486,7 @@ namespace JesBox.Game
         private void ShowVotePromptUI(VotePrompt prompt, int index, int total)
         {
             ShowOnly(_questionPanel);
+            _sound.PlayTick();
             _questionHeaderText.text = L.T("vote.header", index + 1, total);
             _questionBodyText.text = prompt.Scenario;
             string[] letters = { "A", "B", "C", "D" };
@@ -1309,11 +1499,13 @@ namespace JesBox.Game
             float total = _selectedMode == GameMode.Trivia ? questionTimeLimit : 12f;
             if (_questionTimerFill != null)
                 _questionTimerFill.fillAmount = total <= 0 ? 0 : _currentRemaining / total;
+            MaybeBeepCountdown();
         }
 
         private void ShowMicrogameUI(MicrogameDef def, int index, int total)
         {
             ShowOnly(_microgamePanel);
+            _sound.PlayTick();
             _microgameHeaderText.text = L.T("microgame.header", index + 1, total);
             _microgameTitleText.text = def.Title;
             _microgameInstructionsText.text = def.Instructions;
@@ -1329,6 +1521,7 @@ namespace JesBox.Game
         private void ShowSoloTurnUI(SoloGameDef def, string chosenName, int index, int total)
         {
             ShowOnly(_soloPanel);
+            _sound.PlayTick();
             _soloHeaderText.text = L.T("solo.header", index + 1, total);
             _soloChosenNameText.text = L.T("solo.isUp", chosenName);
             _soloTitleText.text = def.Title;
@@ -1340,11 +1533,23 @@ namespace JesBox.Game
             _soloTimerText.text = Mathf.CeilToInt(_currentRemaining).ToString();
             if (_soloTimerFill != null)
                 _soloTimerFill.fillAmount = duration <= 0 ? 0 : _currentRemaining / duration;
+            MaybeBeepCountdown();
+        }
+
+        private void MaybeBeepCountdown()
+        {
+            int sec = Mathf.CeilToInt(_currentRemaining);
+            if (sec <= 3 && sec > 0 && sec != _lastCountdownBeepSecond)
+            {
+                _lastCountdownBeepSecond = sec;
+                _sound.PlayCountdownBeep();
+            }
         }
 
         private void ShowSketchDrawUI(string chosenName, int index, int total)
         {
             ShowOnly(_soloPanel);
+            _sound.PlayTick();
             _soloHeaderText.text = L.T("sketch.header", index + 1, total);
             _soloChosenNameText.text = L.T("sketch.isDrawing", chosenName);
             _soloTitleText.text = L.T("sketch.title");
@@ -1356,6 +1561,24 @@ namespace JesBox.Game
             // Keep _soloPanel/_soloStage as-is so the finished drawing stays
             // visible while everyone guesses — just update the text above it.
             _soloChosenNameText.text = L.T("sketch.whatDidDraw", chosenName);
+            _soloInstructionsText.text = L.T("sketch.guessOnPhone");
+        }
+
+        private void ShowCharadeTurnUI(string chosenName, CharadeType type, int index, int total)
+        {
+            ShowOnly(_soloPanel);
+            _sound.PlayTick();
+            _soloHeaderText.text = L.T("charade.header", index + 1, total);
+            _soloChosenNameText.text = L.T("solo.isUp", chosenName);
+            _soloTitleText.text = L.T("mode.charades");
+            _soloInstructionsText.text = type == CharadeType.Act ? L.T("charade.actInstructions") : L.T("charade.describeInstructions");
+        }
+
+        private void ShowCharadeGuessUI(string chosenName, CharadeType type)
+        {
+            _soloChosenNameText.text = type == CharadeType.Act
+                ? L.T("charade.whatActed", chosenName)
+                : L.T("charade.whatDescribed", chosenName);
             _soloInstructionsText.text = L.T("sketch.guessOnPhone");
         }
 
@@ -1497,6 +1720,7 @@ namespace JesBox.Game
         private void ShowRevealUI(string bannerText, List<PlayerPublic> players)
         {
             ShowOnly(_revealPanel);
+            _sound.PlayReveal();
             _revealBannerText.text = bannerText;
             var top = players.OrderByDescending(p => p.score).Take(5);
             _revealScoresText.text = string.Join("\n", top.Select((p, i) => $"{i + 1}. {p.name} — {p.score} ({(p.delta > 0 ? "+" + p.delta : "0")})"));
@@ -1505,6 +1729,7 @@ namespace JesBox.Game
         private void ShowFinalUI(List<PlayerPublic> sorted)
         {
             ShowOnly(_finalPanel);
+            _sound.PlayVictoryFanfare();
             _finalScoresText.text = string.Join("\n", sorted.Select((p, i) => $"{i + 1}. {p.name} — {p.score}"));
         }
     }
