@@ -50,6 +50,16 @@ Everything is plain JSON over one WebSocket per client, relayed by the server:
 
 See `server/index.js` for the exact relay rules and `Assets/Scripts/Net/Messages.cs` for every payload shape, keyed by `phase`: `lobby`, `question`/`reveal` (trivia), `microgame`/`microgame_reveal` (microgames), `vote_prompt`/`vote_reveal` (prompt & vote), `solo_turn`/`solo_reveal` (Chosen One), `sketch_draw`/`sketch_answer`/`sketch_guess` (Sketch & Guess, which reuses `solo_reveal` for its own reveal), `charade_turn`/`charade_secret`/`charade_guess` (Bible Charades, which also reuses `solo_reveal`), and `final`. Phone→host input is a single generic shape, `{"action": "answer"|"vote"|"tap"|"submit_score"|"move"|"fire"|"shake"|"draw_point"|"draw_clear", "choice": n, "value": n, "x": n, "y": n, "newStroke": bool}` — for Chosen One, Sketch & Guess, and Bible Charades, only the currently-chosen player's phone sends `move`/`fire`/`shake`/`draw_point`/`draw_clear`, and the host ignores those actions from anyone else. Sketch and Charades guesses both reuse the plain `answer` action.
 
+## Reconnection
+
+If a phone's WebSocket drops mid-game (network blip, backgrounded tab, accidental reload), it can pick back up as the *same* player — same `playerId`, same score, since the host keeps score keyed by `playerId` and never touches it during a drop — instead of joining fresh with 0 points:
+
+- **Server** (`server/index.js`): on a player socket closing, the room doesn't delete that player immediately. It nulls out their `ws`, tells the host `player_disconnected`, and holds the slot open for `RECONNECT_GRACE_MS` (60s). A new `rejoin` message (`{"type":"rejoin","roomCode":"ABCD","playerId":"p3"}`) within that window reclaims the slot and tells the host `player_reconnected`. If the grace period lapses first, the slot is torn down for real and the host gets the ordinary `player_left`.
+- **Host** (`GameManager.cs`): `player_disconnected`/`player_reconnected` just flip a `Disconnected` flag (shown as "(reconnecting...)" in the TV's lobby player list) — the player's `PlayerState`/score is never removed, so nothing about scoring changes. The one real piece of logic is resync: every room-wide broadcast is stashed as raw JSON (`BroadcastGame<T>`) and every per-player secret (Sketch & Guess's answer, Bible Charades' prompt) is stashed keyed by player (`SendToPlayer<T>`); on `player_reconnected`, `ResyncPlayer` resends both to that one phone via `game_to`, with the timer field (`duration`/`timeLimit`) patched to the *actual* remaining time rather than the original full duration — so a phone that reconnects mid-question lands right back on the current question with a correct countdown, not a blank screen waiting for the next phase.
+- **Phone** (`phone-ui/src/App.jsx`): the room code + playerId + name are saved to `sessionStorage` on join. Any unexpected socket close (with an active session) triggers an automatic `rejoin` attempt with exponential backoff (up to 5 tries), showing a "Reconnecting..." spinner instead of dumping the player back to the join screen. A page reload does the same thing on mount. If every retry fails or the server reports the session's expired, it falls back cleanly to the normal join screen with an explanation.
+
+This only covers a *player's* phone dropping — if the host (TV/Unity) itself disconnects, the room is torn down immediately (`host_left`) and everyone has to wait for it to relaunch and recreate the room, since all game state lives in that one Unity process.
+
 ## Running it locally (dev loop)
 
 You need 3 things running at once while developing:
@@ -187,8 +197,7 @@ It SSHs in, `git pull`s, reinstalls dependencies, rebuilds the phone-ui, and res
 
 ## Known limitations (v1)
 
-- No reconnect handling — if a phone loses the WebSocket mid-game it has to rejoin as a new player.
-- Room codes and all state live in memory only; restarting the server clears every room.
+- Room codes and all state live in memory only; restarting the server clears every room (including any players sitting in the reconnect grace period).
 - Microgames now has 6 rounds defined; requesting more rounds than that just repeats them. The relay protocol is generic (`type:"game"`), so adding more just means a new `MicrogameKind` in `Microgames.cs`, and a matching React component keyed by that kind in `MicrogameScreen.jsx` — no server changes needed.
 - Game mode, difficulty, and round counts reset to their defaults each time Unity restarts (not persisted to disk).
 - Chosen One has 5 solo minigames defined (`SoloGames.cs`); requesting more turns than the player count just cycles through them again with a new random player each time. Adding another pass/fail one means a new `SoloGameKind`, host-side render/tick logic in `GameManager.cs`, and a matching controller in `SoloTurnScreen.jsx` — still no server changes needed.

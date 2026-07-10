@@ -4,6 +4,7 @@ using System.Linq;
 using JesBox.Net;
 using JesBox.UI;
 using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 using UnityEngine;
 using UnityEngine.EventSystems;
 using UnityEngine.InputSystem.UI;
@@ -35,6 +36,9 @@ namespace JesBox.Game
         {
             public string Name;
             public int Score;
+            /// <summary>True while the server is holding this player's slot
+            /// open during the post-disconnect grace period.</summary>
+            public bool Disconnected;
         }
 
         private struct Answer
@@ -52,6 +56,12 @@ namespace JesBox.Game
         private string _roomCode = "----";
         private bool _gameRunning;
         private float _currentRemaining;
+
+        // Reconnection: the most recent room-wide broadcast (and any per-player
+        // targeted secret) so a phone that rejoins mid-round can be caught up
+        // instantly instead of sitting on a stale screen until the next phase.
+        private string _lastBroadcastJson;
+        private readonly Dictionary<string, string> _lastTargetedJson = new Dictionary<string, string>();
 
         // Host-selected settings
         private GameMode _selectedMode = GameMode.Trivia;
@@ -267,8 +277,34 @@ namespace JesBox.Game
                 {
                     var left = JsonConvert.DeserializeObject<PlayerLeftIn>(raw);
                     _players.Remove(left.playerId);
+                    _lastTargetedJson.Remove(left.playerId);
                     RefreshLobbyUI();
                     BroadcastLobby();
+                    break;
+                }
+
+                case "player_disconnected":
+                {
+                    // Their slot (and score) is held open server-side for a
+                    // grace period — nothing to do here but flag it so the
+                    // host can see who's dropped.
+                    var disconnected = JsonConvert.DeserializeObject<PlayerDisconnectedIn>(raw);
+                    if (_players.TryGetValue(disconnected.playerId, out var droppedPlayer))
+                        droppedPlayer.Disconnected = true;
+                    RefreshLobbyUI();
+                    BroadcastLobby();
+                    break;
+                }
+
+                case "player_reconnected":
+                {
+                    var reconnected = JsonConvert.DeserializeObject<PlayerReconnectedIn>(raw);
+                    if (_players.TryGetValue(reconnected.playerId, out var backPlayer))
+                        backPlayer.Disconnected = false;
+                    RefreshLobbyUI();
+                    BroadcastLobby();
+                    ResyncPlayer(reconnected.playerId);
+                    _sound.PlayJoin();
                     break;
                 }
 
@@ -330,7 +366,64 @@ namespace JesBox.Game
 
         private void BroadcastLobby()
         {
-            _net.SendJson(new GameOut<LobbyPayload> { data = new LobbyPayload { players = PublicList() } });
+            BroadcastGame(new LobbyPayload { players = PublicList() });
+        }
+
+        // ---- Reconnection: resend state to a rejoined phone ----
+
+        /// <summary>Sends <paramref name="data"/> to every player, same as
+        /// wrapping it in a <see cref="GameOut{T}"/> — but also stashes the
+        /// serialized JSON so a reconnecting player can be caught up later
+        /// via <see cref="ResyncPlayer"/>.</summary>
+        private void BroadcastGame<T>(T data)
+        {
+            _lastBroadcastJson = JsonConvert.SerializeObject(data);
+            _net.SendRaw("{\"type\":\"game\",\"data\":" + _lastBroadcastJson + "}");
+        }
+
+        /// <summary>Sends <paramref name="data"/> to exactly one player, same
+        /// as wrapping it in a <see cref="GameToOut{T}"/> — but also stashes
+        /// it (keyed by player) as a secret to resend if that same player
+        /// reconnects mid-turn (e.g. Sketch & Guess's answer, Bible Charades'
+        /// prompt).</summary>
+        private void SendToPlayer<T>(string playerId, T data)
+        {
+            string json = JsonConvert.SerializeObject(data);
+            _lastTargetedJson[playerId] = json;
+            SendGameToRaw(playerId, json);
+        }
+
+        private void SendGameToRaw(string playerId, string dataJson)
+        {
+            _net.SendRaw("{\"type\":\"game_to\",\"playerId\":" + JsonConvert.SerializeObject(playerId) + ",\"data\":" + dataJson + "}");
+        }
+
+        /// <summary>Catches a reconnected phone up on whatever's currently
+        /// happening: the last room-wide broadcast (with its time-remaining
+        /// field patched to the real current value, not the original full
+        /// duration), plus that player's own secret if they're the one
+        /// currently drawing/performing.</summary>
+        private void ResyncPlayer(string playerId)
+        {
+            if (_lastBroadcastJson != null)
+                SendGameToRaw(playerId, PatchRemainingTime(_lastBroadcastJson));
+            if (_lastTargetedJson.TryGetValue(playerId, out var secretJson))
+                SendGameToRaw(playerId, secretJson);
+        }
+
+        private string PatchRemainingTime(string json)
+        {
+            try
+            {
+                var obj = JObject.Parse(json);
+                if (obj["timeLimit"] != null) obj["timeLimit"] = _currentRemaining;
+                else if (obj["duration"] != null) obj["duration"] = _currentRemaining;
+                return obj.ToString(Formatting.None);
+            }
+            catch
+            {
+                return json;
+            }
         }
 
         // ---- Game flow: shared ----
@@ -372,7 +465,7 @@ namespace JesBox.Game
         private void FinishGame()
         {
             var sorted = PublicList().OrderByDescending(p => p.score).ToList();
-            _net.SendJson(new GameOut<FinalPayload> { data = new FinalPayload { players = sorted } });
+            BroadcastGame(new FinalPayload { players = sorted });
             ShowFinalUI(sorted);
             _gameRunning = false;
         }
@@ -407,16 +500,13 @@ namespace JesBox.Game
             _answersThisRound.Clear();
             _currentRemaining = questionTimeLimit;
 
-            _net.SendJson(new GameOut<QuestionPayload>
+            BroadcastGame(new QuestionPayload
             {
-                data = new QuestionPayload
-                {
-                    index = index,
-                    total = total,
-                    question = q.Question,
-                    choices = new List<string>(q.Choices),
-                    timeLimit = questionTimeLimit
-                }
+                index = index,
+                total = total,
+                question = q.Question,
+                choices = new List<string>(q.Choices),
+                timeLimit = questionTimeLimit
             });
             ShowQuestionUI(q, index, total);
 
@@ -442,7 +532,7 @@ namespace JesBox.Game
             }
 
             var publicList = PublicList(deltas);
-            _net.SendJson(new GameOut<RevealPayload> { data = new RevealPayload { correctIndex = q.CorrectIndex, players = publicList } });
+            BroadcastGame(new RevealPayload { correctIndex = q.CorrectIndex, players = publicList });
             string[] letters = { "A", "B", "C", "D" };
             ShowRevealUI(L.T("question.correctAnswer", letters[q.CorrectIndex], q.Choices[q.CorrectIndex]), publicList);
 
@@ -470,17 +560,14 @@ namespace JesBox.Game
             _submittedScores.Clear();
             _currentRemaining = def.Duration;
 
-            _net.SendJson(new GameOut<MicrogamePayload>
+            BroadcastGame(new MicrogamePayload
             {
-                data = new MicrogamePayload
-                {
-                    index = index,
-                    total = total,
-                    kind = def.Kind.ToString(),
-                    title = def.Title,
-                    instructions = def.Instructions,
-                    duration = def.Duration
-                }
+                index = index,
+                total = total,
+                kind = def.Kind.ToString(),
+                title = def.Title,
+                instructions = def.Instructions,
+                duration = def.Duration
             });
             ShowMicrogameUI(def, index, total);
 
@@ -512,7 +599,7 @@ namespace JesBox.Game
 
             var publicList = PublicList(deltas);
             string microResultText = L.T("microgame.results", def.Title);
-            _net.SendJson(new GameOut<MicrogameRevealPayload> { data = new MicrogameRevealPayload { title = microResultText, players = publicList } });
+            BroadcastGame(new MicrogameRevealPayload { title = microResultText, players = publicList });
             ShowRevealUI(microResultText, publicList);
 
             yield return new WaitForSeconds(revealDuration);
@@ -552,16 +639,13 @@ namespace JesBox.Game
             const float duration = 12f;
             _currentRemaining = duration;
 
-            _net.SendJson(new GameOut<VotePromptPayload>
+            BroadcastGame(new VotePromptPayload
             {
-                data = new VotePromptPayload
-                {
-                    index = index,
-                    total = total,
-                    scenario = prompt.Scenario,
-                    options = new List<string>(prompt.Options),
-                    timeLimit = duration
-                }
+                index = index,
+                total = total,
+                scenario = prompt.Scenario,
+                options = new List<string>(prompt.Options),
+                timeLimit = duration
             });
             ShowVotePromptUI(prompt, index, total);
 
@@ -603,10 +687,7 @@ namespace JesBox.Game
             }
 
             var publicList = PublicList(deltas);
-            _net.SendJson(new GameOut<VoteRevealPayload>
-            {
-                data = new VoteRevealPayload { tally = new List<int>(tally), favoriteIndex = favoriteIndex, players = publicList }
-            });
+            BroadcastGame(new VoteRevealPayload { tally = new List<int>(tally), favoriteIndex = favoriteIndex, players = publicList });
 
             string[] letters = { "A", "B", "C", "D" };
             string banner = favoriteIndex >= 0
@@ -704,20 +785,17 @@ namespace JesBox.Game
             // so this doesn't cost the player any reaction time.
             yield return PlaySoloIntro(def);
 
-            _net.SendJson(new GameOut<SoloTurnPayload>
+            BroadcastGame(new SoloTurnPayload
             {
-                data = new SoloTurnPayload
-                {
-                    index = index,
-                    total = total,
-                    chosenId = chosenId,
-                    chosenName = chosenName,
-                    kind = def.Kind.ToString(),
-                    title = def.Title,
-                    controllerInstructions = def.ControllerInstructions,
-                    verb = def.Verb,
-                    duration = duration
-                }
+                index = index,
+                total = total,
+                chosenId = chosenId,
+                chosenName = chosenName,
+                kind = def.Kind.ToString(),
+                title = def.Title,
+                controllerInstructions = def.ControllerInstructions,
+                verb = def.Verb,
+                duration = duration
             });
 
             float elapsed = 0f;
@@ -757,7 +835,7 @@ namespace JesBox.Game
 
             var publicList = PublicList(deltas);
             string resultText = BuildSoloResultText(def.Kind, chosenName, points);
-            _net.SendJson(new GameOut<SoloRevealPayload> { data = new SoloRevealPayload { title = resultText, players = publicList } });
+            BroadcastGame(new SoloRevealPayload { title = resultText, players = publicList });
             ShowRevealUI(resultText, publicList);
 
             yield return new WaitForSeconds(SoloRevealDuration);
@@ -778,11 +856,8 @@ namespace JesBox.Game
             float drawDuration = SketchDrawDuration;
             _currentRemaining = drawDuration;
 
-            _net.SendJson(new GameOut<SketchDrawPayload>
-            {
-                data = new SketchDrawPayload { index = index, total = total, chosenId = chosenId, chosenName = chosenName, duration = drawDuration }
-            });
-            _net.SendJson(new GameToOut<SketchAnswerPayload> { playerId = chosenId, data = new SketchAnswerPayload { answer = prompt.Answer } });
+            BroadcastGame(new SketchDrawPayload { index = index, total = total, chosenId = chosenId, chosenName = chosenName, duration = drawDuration });
+            SendToPlayer(chosenId, new SketchAnswerPayload { answer = prompt.Answer });
 
             ShowSketchDrawUI(chosenName, index, total);
             _soloStage.anchoredPosition = SketchStagePos;
@@ -803,17 +878,14 @@ namespace JesBox.Game
             _answersThisRound.Clear();
             _currentRemaining = SketchGuessDuration;
 
-            _net.SendJson(new GameOut<SketchGuessPayload>
+            BroadcastGame(new SketchGuessPayload
             {
-                data = new SketchGuessPayload
-                {
-                    index = index,
-                    total = total,
-                    chosenId = chosenId,
-                    chosenName = chosenName,
-                    choices = new List<string>(prompt.Choices),
-                    timeLimit = SketchGuessDuration
-                }
+                index = index,
+                total = total,
+                chosenId = chosenId,
+                chosenName = chosenName,
+                choices = new List<string>(prompt.Choices),
+                timeLimit = SketchGuessDuration
             });
             ShowSketchGuessUI(chosenName);
 
@@ -857,7 +929,7 @@ namespace JesBox.Game
 
             string resultText = L.T("sketch.result", chosenName, prompt.Answer, correctCount, guesserCount, artistBonus);
             var publicList = PublicList(deltas);
-            _net.SendJson(new GameOut<SoloRevealPayload> { data = new SoloRevealPayload { title = resultText, players = publicList } });
+            BroadcastGame(new SoloRevealPayload { title = resultText, players = publicList });
             ShowRevealUI(resultText, publicList);
 
             yield return new WaitForSeconds(SoloRevealDuration);
@@ -894,19 +966,12 @@ namespace JesBox.Game
             const float duration = CharadeDuration;
             _currentRemaining = duration;
 
-            _net.SendJson(new GameOut<CharadeTurnPayload>
+            BroadcastGame(new CharadeTurnPayload { index = index, total = total, chosenId = chosenId, chosenName = chosenName, charadeType = typeStr, duration = duration });
+            SendToPlayer(chosenId, new CharadeSecretPayload
             {
-                data = new CharadeTurnPayload { index = index, total = total, chosenId = chosenId, chosenName = chosenName, charadeType = typeStr, duration = duration }
-            });
-            _net.SendJson(new GameToOut<CharadeSecretPayload>
-            {
-                playerId = chosenId,
-                data = new CharadeSecretPayload
-                {
-                    prompt = prompt.Prompt,
-                    forbidden = type == CharadeType.Describe ? new List<string>(prompt.Forbidden) : new List<string>(),
-                    charadeType = typeStr
-                }
+                prompt = prompt.Prompt,
+                forbidden = type == CharadeType.Describe ? new List<string>(prompt.Forbidden) : new List<string>(),
+                charadeType = typeStr
             });
 
             ShowCharadeTurnUI(chosenName, type, index, total);
@@ -926,17 +991,14 @@ namespace JesBox.Game
             _answersThisRound.Clear();
             _currentRemaining = CharadeGuessDuration;
 
-            _net.SendJson(new GameOut<CharadeGuessPayload>
+            BroadcastGame(new CharadeGuessPayload
             {
-                data = new CharadeGuessPayload
-                {
-                    index = index,
-                    total = total,
-                    chosenId = chosenId,
-                    chosenName = chosenName,
-                    choices = new List<string>(prompt.Choices),
-                    timeLimit = CharadeGuessDuration
-                }
+                index = index,
+                total = total,
+                chosenId = chosenId,
+                chosenName = chosenName,
+                choices = new List<string>(prompt.Choices),
+                timeLimit = CharadeGuessDuration
             });
             ShowCharadeGuessUI(chosenName, type);
 
@@ -978,7 +1040,7 @@ namespace JesBox.Game
 
             string resultText = L.T("charade.result", chosenName, prompt.Prompt, correctCount, guesserCount, bonus);
             var publicList = PublicList(deltas);
-            _net.SendJson(new GameOut<SoloRevealPayload> { data = new SoloRevealPayload { title = resultText, players = publicList } });
+            BroadcastGame(new SoloRevealPayload { title = resultText, players = publicList });
             ShowRevealUI(resultText, publicList);
 
             yield return new WaitForSeconds(SoloRevealDuration);
@@ -1504,7 +1566,7 @@ namespace JesBox.Game
             _lobbyCodeText.text = L.T("lobby.roomCode", _roomCode);
             _lobbyPlayersText.text = _players.Count == 0
                 ? L.T("lobby.waiting")
-                : string.Join("\n", _players.Values.Select(p => p.Name));
+                : string.Join("\n", _players.Values.Select(p => p.Disconnected ? L.T("lobby.playerReconnecting", p.Name) : p.Name));
             _startButton.gameObject.SetActive(!_gameRunning && _players.Count > 0);
         }
 

@@ -15,6 +15,9 @@ const { WebSocketServer } = require('ws');
 const PORT = process.env.PORT || 8080;
 const ROOM_CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // no 0/O/1/I
 const ROOM_CODE_LENGTH = 4;
+// How long a disconnected player's slot (identity + score, which lives in
+// Unity, not here) is held open for a `rejoin` before it's given up for good.
+const RECONNECT_GRACE_MS = 60_000;
 
 const app = express();
 const distPath = path.join(__dirname, '..', 'phone-ui', 'dist');
@@ -28,7 +31,7 @@ app.get(/^\/(?!ws).*/, (req, res) => {
 const server = http.createServer(app);
 const wss = new WebSocketServer({ server, path: '/ws' });
 
-/** roomCode -> { hostWs, players: Map<playerId, { ws, name }> } */
+/** roomCode -> { hostWs, players: Map<playerId, { ws, name, disconnectTimer }> } */
 const rooms = new Map();
 let nextPlayerNum = 1;
 
@@ -83,12 +86,38 @@ wss.on('connection', (ws) => {
           return;
         }
         const playerId = `p${nextPlayerNum++}`;
-        room.players.set(playerId, { ws, name });
+        room.players.set(playerId, { ws, name, disconnectTimer: null });
         ws.role = 'player';
         ws.roomCode = roomCode;
         ws.playerId = playerId;
         send(ws, { type: 'joined', playerId, roomCode });
         send(room.hostWs, { type: 'player_joined', playerId, name });
+        break;
+      }
+
+      case 'rejoin': {
+        // A phone that dropped mid-game reclaiming its old identity (and
+        // therefore its score, which Unity keeps keyed by playerId) instead
+        // of joining as a brand-new player. Only works within the grace
+        // window below — after that the slot's been given up for good.
+        const roomCode = String(msg.roomCode || '').toUpperCase();
+        const playerId = String(msg.playerId || '');
+        const room = rooms.get(roomCode);
+        const player = room && room.players.get(playerId);
+        if (!room || !player) {
+          send(ws, { type: 'join_error', message: 'Session expired — please rejoin.' });
+          return;
+        }
+        if (player.disconnectTimer) {
+          clearTimeout(player.disconnectTimer);
+          player.disconnectTimer = null;
+        }
+        player.ws = ws;
+        ws.role = 'player';
+        ws.roomCode = roomCode;
+        ws.playerId = playerId;
+        send(ws, { type: 'joined', playerId, roomCode });
+        send(room.hostWs, { type: 'player_reconnected', playerId });
         break;
       }
 
@@ -132,8 +161,17 @@ wss.on('connection', (ws) => {
       broadcastToPlayers(room, { type: 'host_left' });
       rooms.delete(ws.roomCode);
     } else if (ws.role === 'player') {
-      room.players.delete(ws.playerId);
-      send(room.hostWs, { type: 'player_left', playerId: ws.playerId });
+      const player = room.players.get(ws.playerId);
+      // If a rejoin already replaced this player's socket, this is just the
+      // old socket's close event arriving late — ignore it.
+      if (!player || player.ws !== ws) return;
+
+      player.ws = null;
+      send(room.hostWs, { type: 'player_disconnected', playerId: ws.playerId });
+      player.disconnectTimer = setTimeout(() => {
+        room.players.delete(ws.playerId);
+        send(room.hostWs, { type: 'player_left', playerId: ws.playerId });
+      }, RECONNECT_GRACE_MS);
     }
   });
 });

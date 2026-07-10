@@ -13,10 +13,12 @@ const translations = {
     'join.button': 'Join Game',
 
     'connecting.text': 'Joining room...',
+    'connecting.reconnecting': 'Reconnecting...',
 
     'error.joinFailed': 'Could not join that room.',
     'error.connection': 'Connection error. Check the room code and try again.',
     'error.hostLeft': 'The host disconnected. Ask them to relaunch and rejoin.',
+    'error.connectionLost': "Lost connection and couldn't reconnect. Please rejoin.",
 
     'lobby.title': "You're in!",
     'lobby.room': 'Room {code}',
@@ -95,10 +97,12 @@ const translations = {
     'join.button': 'Spiel beitreten',
 
     'connecting.text': 'Trete Raum bei...',
+    'connecting.reconnecting': 'Verbinde erneut...',
 
     'error.joinFailed': 'Dieser Raum wurde nicht gefunden.',
     'error.connection': 'Verbindungsfehler. Überprüfe den Raumcode und versuche es erneut.',
     'error.hostLeft': 'Der Host hat die Verbindung getrennt. Bitte neu starten und erneut beitreten.',
+    'error.connectionLost': 'Verbindung verloren — erneutes Verbinden fehlgeschlagen. Bitte erneut beitreten.',
 
     'lobby.title': 'Du bist dabei!',
     'lobby.room': 'Raum {code}',

@@ -1,4 +1,4 @@
-import React, { useCallback, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import JoinScreen from './components/JoinScreen.jsx';
 import LobbyScreen from './components/LobbyScreen.jsx';
 import QuestionScreen from './components/QuestionScreen.jsx';
@@ -21,6 +21,41 @@ function getWsUrl() {
   return `${proto}://${window.location.host}/ws`;
 }
 
+// Session persistence so a dropped connection (network blip, backgrounded
+// tab, accidental reload) can reclaim the same playerId — and therefore the
+// same score, which the host keeps keyed by playerId — instead of joining
+// fresh. Scoped to sessionStorage (not localStorage) so it naturally expires
+// with the tab rather than resurrecting a session from a long-gone game.
+const SESSION_KEY = 'jesbox_session';
+
+function loadSession() {
+  try {
+    const raw = sessionStorage.getItem(SESSION_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+function saveSession(session) {
+  try {
+    sessionStorage.setItem(SESSION_KEY, JSON.stringify(session));
+  } catch {
+    // ignore (private browsing etc.)
+  }
+}
+
+function clearSession() {
+  try {
+    sessionStorage.removeItem(SESSION_KEY);
+  } catch {
+    // ignore
+  }
+}
+
+const RECONNECT_MAX_ATTEMPTS = 5;
+const RECONNECT_BASE_DELAY_MS = 1000;
+
 function AppInner() {
   const { t } = useLanguage();
 
@@ -37,6 +72,11 @@ function AppInner() {
   const [secretAnswer, setSecretAnswer] = useState(null); // Sketch That Verse: only set on the artist's phone
   const [charadeSecret, setCharadeSecret] = useState(null); // Bible Charades: only set on the performer's phone
   const wsRef = useRef(null);
+  const sessionRef = useRef(null); // {roomCode, playerId, name} once joined
+  const pendingNameRef = useRef('');
+  const isRejoinRef = useRef(false);
+  const reconnectAttemptRef = useRef(0);
+  const reconnectTimerRef = useRef(null);
 
   const handleMessage = useCallback((raw) => {
     let msg;
@@ -47,13 +87,26 @@ function AppInner() {
     }
 
     switch (msg.type) {
-      case 'joined':
+      case 'joined': {
+        reconnectAttemptRef.current = 0;
+        const session = { roomCode: msg.roomCode, playerId: msg.playerId, name: sessionRef.current?.name || pendingNameRef.current };
+        sessionRef.current = session;
+        saveSession(session);
         setPlayerId(msg.playerId);
         setRoomCode(msg.roomCode);
         setError('');
-        setScreen('lobby');
+        // On a fresh join, jump straight to the lobby as before. On a
+        // rejoin, stay on the spinner — the host resyncs us with a `game`
+        // message a moment later carrying whatever phase is actually live,
+        // and that's what should drive the screen switch.
+        if (!isRejoinRef.current) setScreen('lobby');
         break;
+      }
       case 'join_error':
+        clearSession();
+        sessionRef.current = null;
+        isRejoinRef.current = false;
+        reconnectAttemptRef.current = 0;
         setError(msg.message || t('error.joinFailed'));
         setScreen('join');
         if (wsRef.current) wsRef.current.close();
@@ -80,6 +133,8 @@ function AppInner() {
         break;
       }
       case 'host_left':
+        clearSession();
+        sessionRef.current = null;
         setError(t('error.hostLeft'));
         setScreen('join');
         break;
@@ -88,24 +143,85 @@ function AppInner() {
     }
   }, [t]);
 
-  const join = useCallback((name, code) => {
-    setError('');
-    setScreen('connecting');
+  // openSocket/scheduleReconnect call each other, so both are plain function
+  // declarations (hoisted, and cheap to recreate each render) rather than
+  // useCallback — that sidesteps a circular-dependency headache for no real
+  // cost, since neither is passed down as a memoized child prop.
+  function openSocket(buildInitialMessage) {
     const ws = new WebSocket(getWsUrl());
     wsRef.current = ws;
 
-    ws.onopen = () => {
-      ws.send(JSON.stringify({ type: 'join', roomCode: code.toUpperCase(), name }));
-    };
+    ws.onopen = () => ws.send(JSON.stringify(buildInitialMessage()));
     ws.onmessage = (event) => handleMessage(event.data);
     ws.onerror = () => {
-      setError(t('error.connection'));
-      setScreen('join');
+      if (wsRef.current !== ws || ws._jesboxHandled) return;
+      ws._jesboxHandled = true;
+      scheduleReconnect();
     };
     ws.onclose = () => {
-      setScreen((current) => (current === 'connecting' ? 'join' : current));
+      if (wsRef.current !== ws || ws._jesboxHandled) return;
+      ws._jesboxHandled = true;
+      scheduleReconnect();
     };
-  }, [handleMessage, t]);
+  }
+
+  function scheduleReconnect() {
+    if (reconnectTimerRef.current) {
+      clearTimeout(reconnectTimerRef.current);
+      reconnectTimerRef.current = null;
+    }
+
+    if (!sessionRef.current) {
+      setScreen('join');
+      return;
+    }
+
+    if (reconnectAttemptRef.current >= RECONNECT_MAX_ATTEMPTS) {
+      clearSession();
+      sessionRef.current = null;
+      isRejoinRef.current = false;
+      setScreen('join');
+      setError(t('error.connectionLost'));
+      return;
+    }
+
+    const attempt = reconnectAttemptRef.current;
+    reconnectAttemptRef.current += 1;
+    isRejoinRef.current = true;
+    setScreen('connecting');
+
+    const delay = RECONNECT_BASE_DELAY_MS * Math.pow(2, attempt);
+    reconnectTimerRef.current = setTimeout(() => {
+      const session = sessionRef.current;
+      if (!session) return;
+      openSocket(() => ({ type: 'rejoin', roomCode: session.roomCode, playerId: session.playerId }));
+    }, delay);
+  }
+
+  // If the tab reloaded (or the app relaunched) while a session was still
+  // active, try to silently pick back up instead of dumping the player onto
+  // the join screen.
+  useEffect(() => {
+    const stored = loadSession();
+    if (!stored) return;
+    sessionRef.current = stored;
+    isRejoinRef.current = true;
+    setScreen('connecting');
+    openSocket(() => ({ type: 'rejoin', roomCode: stored.roomCode, playerId: stored.playerId }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const join = useCallback((name, code) => {
+    setError('');
+    clearSession();
+    sessionRef.current = null;
+    isRejoinRef.current = false;
+    reconnectAttemptRef.current = 0;
+    pendingNameRef.current = name;
+    setScreen('connecting');
+    openSocket(() => ({ type: 'join', roomCode: code.toUpperCase(), name }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const sendAction = useCallback((payload) => {
     const ws = wsRef.current;
@@ -160,7 +276,7 @@ function AppInner() {
       content = (
         <div className="screen">
           <div className="spinner" />
-          <p className="subtitle">{t('connecting.text')}</p>
+          <p className="subtitle">{t(isRejoinRef.current ? 'connecting.reconnecting' : 'connecting.text')}</p>
         </div>
       );
       break;

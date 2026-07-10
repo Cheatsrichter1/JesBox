@@ -39,6 +39,15 @@ namespace JesBox.Net
             _socket.SendText(json);
         }
 
+        /// <summary>Sends an already-serialized JSON string as-is — used to
+        /// resend a previously-captured payload (e.g. resyncing a reconnected
+        /// player) without re-serializing it from a live object.</summary>
+        public void SendRaw(string json)
+        {
+            if (!IsOpen) return;
+            _socket.SendText(json);
+        }
+
         private void Update()
         {
 #if !UNITY_WEBGL || UNITY_EDITOR

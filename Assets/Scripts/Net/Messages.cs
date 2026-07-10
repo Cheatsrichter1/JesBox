@@ -29,6 +29,24 @@ namespace JesBox.Net
         public string playerId;
     }
 
+    /// <summary>Sent when a player's socket drops — they're not gone yet, the
+    /// server holds their slot open for a grace period in case they rejoin.</summary>
+    public class PlayerDisconnectedIn
+    {
+        public string type;
+        public string playerId;
+    }
+
+    /// <summary>Sent when a dropped player's phone reclaims its old identity
+    /// (via the server's "rejoin" message) within the grace period — their
+    /// score/state in <c>_players</c> was never touched, so all that's left
+    /// to do is resend them the current game state.</summary>
+    public class PlayerReconnectedIn
+    {
+        public string type;
+        public string playerId;
+    }
+
     /// <summary>
     /// Generic per-player input. "action" says what kind of input this is;
     /// only the fields relevant to that action are populated by the phone.

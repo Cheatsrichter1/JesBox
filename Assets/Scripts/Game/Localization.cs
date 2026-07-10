@@ -28,6 +28,7 @@ namespace JesBox.Game
             ["lobby.gameMode"] = new[] { "GAME MODE", "SPIELMODUS" },
             ["lobby.waiting"] = new[] { "Waiting for players...", "Warten auf Spieler..." },
             ["lobby.startGame"] = new[] { "Start Game", "Spiel starten" },
+            ["lobby.playerReconnecting"] = new[] { "{0} (reconnecting...)", "{0} (verbindet erneut...)" },
 
             ["mode.trivia"] = new[] { "Trivia Quiz", "Bibel-Quiz" },
             ["mode.microgames"] = new[] { "Microgames", "Minispiele" },
