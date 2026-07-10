@@ -22,6 +22,18 @@ The lobby screen shows a scannable QR code next to the room code and URL (top-le
 
 `Assets/Scripts/Game/SoundManager.cs` adds short audio cues (player join, round start, per-second countdown ticks/beeps, reveal, victory fanfare) at the key moments in every game mode. Every tone is synthesized procedurally at runtime (sine waves via `AudioClip.Create`, cached per cue) — there are no audio asset files to import, so sound works immediately on a fresh clone. Swap in real recorded SFX later by replacing a `Play*` method's body with `_source.PlayOneShot(yourClip)`.
 
+## Chosen One visuals (unique art per minigame)
+
+Every Chosen One game used to render as plain colored UI rectangles, all built the same way. Two of them — **Joyful Prayer** and **Parting the Sea** — now go through a swappable visual layer instead, so each game can have its own distinct art style (2D sprites, a 3D diorama, whatever fits) without GameManager needing to know or care which:
+
+- **`Assets/Scripts/Game/SoloGameVisuals.cs`** defines `ISoloGameVisual` (`Setup(stage)` / `SetProgress(fraction)` / `Teardown()`) — GameManager still owns 100% of the actual game logic (counting shakes/taps, deciding win/lose); the visual is purely cosmetic, driven by a 0–1 progress value.
+- **`SoloGameVisualFactory.Create(kind)`** first looks for a hand-authored prefab at `Assets/Resources/SoloVisuals/{KindName}.prefab` (e.g. `SoloVisuals/PartingTheSea.prefab`) whose root has a component implementing `ISoloGameVisual`. **This is the drop-in point for your own art** — build a prefab in the Editor with your own meshes/sprites/animations, save it there, and it's picked up automatically next time that game is chosen. No code changes needed.
+- If no prefab exists yet, it falls back to a built-in placeholder so the game never looks broken/blank:
+  - **`JoyfulPrayerVisual`** — a 2D example: a soft procedurally-generated glow that grows and warms in color as the shake meter fills. Has a `customSprite` field (visible in the Inspector if you attach/prefab it yourself) to swap in real painted art.
+  - **`PartingTheSeaVisual`** — a 3D example: a small low-poly-primitive diorama (floor, two "water" walls that slide apart as progress increases, a directional light) rendered by its own dedicated camera into a `RenderTexture`, which is what actually gets displayed on the stage via a `RawImage`. The rest of the game is a UI Canvas with no camera of its own, so this doesn't conflict with anything. Has a `customWaterWallPrefab` field to swap in real low-poly meshes/materials for the walls.
+
+The other three Chosen One games (Fiery Furnace Dash, David's Slingshot, Loaves and Fishes) still use the original plain-rectangle stage code in `GameManager.cs` — the same prefab-or-placeholder pattern extends to them the same way if you want unique art there too, it just hasn't been done yet.
+
 ## Language (English / German)
 
 The TV and each phone pick their language **independently**:

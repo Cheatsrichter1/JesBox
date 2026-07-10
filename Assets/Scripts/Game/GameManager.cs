@@ -124,13 +124,11 @@ namespace JesBox.Game
 
         // Joyful Prayer
         private int _soloPrayerCount;
-        private Image _soloPrayerMeterFill;
         private const int SoloPrayerTarget = 8;
 
         // Parting the Sea
         private int _soloPartingCount;
         private int _soloPartingLastDir;
-        private Image _soloPartingMeterFill;
         private const int SoloPartingTarget = 5;
 
         // Sketch That Verse (draw phase renders live strokes from the artist's
@@ -184,6 +182,7 @@ namespace JesBox.Game
         private Text _soloHeaderText, _soloChosenNameText, _soloTitleText, _soloInstructionsText, _soloTimerText;
         private Image _soloTimerFill;
         private RectTransform _soloStage;
+        private ISoloGameVisual _soloVisual;
         private Text _soloVerbText;
         private Image _flashOverlay;
         private RectTransform _hostControlsBar;
@@ -1216,7 +1215,7 @@ namespace JesBox.Game
                 if (dir == _soloPartingLastDir) return; // must alternate direction each tap
                 _soloPartingLastDir = dir;
                 _soloPartingCount++;
-                UpdateSoloMeterUI(_soloPartingMeterFill, _soloPartingCount / (float)SoloPartingTarget);
+                _soloVisual?.SetProgress(_soloPartingCount / (float)SoloPartingTarget);
                 if (_soloPartingCount >= SoloPartingTarget)
                 {
                     _soloRoundOver = true;
@@ -1241,7 +1240,7 @@ namespace JesBox.Game
         {
             if (_soloRoundOver || _currentSoloKind != SoloGameKind.JoyfulPrayer) return;
             _soloPrayerCount++;
-            UpdateSoloMeterUI(_soloPrayerMeterFill, _soloPrayerCount / (float)SoloPrayerTarget);
+            _soloVisual?.SetProgress(_soloPrayerCount / (float)SoloPrayerTarget);
             if (_soloPrayerCount >= SoloPrayerTarget)
             {
                 _soloRoundOver = true;
@@ -1906,45 +1905,11 @@ namespace JesBox.Game
                     ? new Color(0.55f, 0.2f, 0.2f, 0.95f)
                     : new Color(0.85f, 0.65f, 0.25f, 0.95f);
             }
-            else if (kind == SoloGameKind.JoyfulPrayer)
+            else if (kind == SoloGameKind.JoyfulPrayer || kind == SoloGameKind.PartingTheSea)
             {
-                _soloPrayerMeterFill = BuildSoloMeterBar(new Color(0.75f, 0.55f, 0.9f, 0.9f));
+                _soloVisual = SoloGameVisualFactory.Create(kind);
+                _soloVisual?.Setup(_soloStage);
             }
-            else if (kind == SoloGameKind.PartingTheSea)
-            {
-                _soloPartingMeterFill = BuildSoloMeterBar(new Color(0.35f, 0.65f, 0.8f, 0.9f));
-            }
-        }
-
-        private Image BuildSoloMeterBar(Color fillColor)
-        {
-            var bgGo = new GameObject("MeterBg", typeof(Image));
-            var bgRt = bgGo.GetComponent<RectTransform>();
-            bgRt.SetParent(_soloStage, false);
-            bgRt.anchorMin = new Vector2(0.5f, 0.5f);
-            bgRt.anchorMax = new Vector2(0.5f, 0.5f);
-            bgRt.anchoredPosition = Vector2.zero;
-            bgRt.sizeDelta = new Vector2(600, 60);
-            bgGo.GetComponent<Image>().color = new Color(1f, 1f, 1f, 0.12f);
-
-            var fillGo = new GameObject("MeterFill", typeof(Image));
-            var fillRt = fillGo.GetComponent<RectTransform>();
-            fillRt.SetParent(bgRt, false);
-            fillRt.anchorMin = Vector2.zero;
-            fillRt.anchorMax = Vector2.one;
-            fillRt.offsetMin = Vector2.zero;
-            fillRt.offsetMax = Vector2.zero;
-            var fillImg = fillGo.GetComponent<Image>();
-            fillImg.color = fillColor;
-            fillImg.type = Image.Type.Filled;
-            fillImg.fillMethod = Image.FillMethod.Horizontal;
-            fillImg.fillAmount = 0f;
-            return fillImg;
-        }
-
-        private static void UpdateSoloMeterUI(Image meterFill, float fraction)
-        {
-            if (meterFill != null) meterFill.fillAmount = Mathf.Clamp01(fraction);
         }
 
         private void UpdateSoloPlayerMarkerPosition()
@@ -1955,6 +1920,13 @@ namespace JesBox.Game
 
         private void ClearSoloStage()
         {
+            // Tear down before the blanket child-destroy below so a visual's
+            // Teardown() (which may release a RenderTexture or destroy a
+            // camera living outside the stage hierarchy) runs against still-
+            // valid objects rather than ones the loop already swept.
+            _soloVisual?.Teardown();
+            _soloVisual = null;
+
             foreach (var obstacle in _soloObstacles)
             {
                 if (obstacle.Rt != null) Destroy(obstacle.Rt.gameObject);
@@ -1962,8 +1934,6 @@ namespace JesBox.Game
             _soloObstacles.Clear();
             _soloPlayerMarker = null;
             _soloTargetMarker = null;
-            _soloPrayerMeterFill = null;
-            _soloPartingMeterFill = null;
             _drawSegments.Clear();
             _lastDrawPoint = null;
 
