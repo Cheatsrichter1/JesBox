@@ -6,9 +6,14 @@ namespace JesBox.Game
     /// <summary>
     /// Procedurally generated sound effects — no audio asset files needed,
     /// so this works immediately. Each cue is a short sequence of sine-wave
-    /// tones synthesized once (via AudioClip.Create) and cached. If you later
-    /// want real recorded sound effects instead, replace the body of a Play*
-    /// method with `_source.PlayOneShot(yourClip)`.
+    /// tones synthesized once (via AudioClip.Create) and cached.
+    ///
+    /// Drop your own audio in: put a clip named after the cue key (see the
+    /// Play* methods below — "click", "join", "roundstart", "tick",
+    /// "countdown", "reveal", "victory", "go", "success", "fail") at
+    /// Assets/Resources/Sounds/{key}.wav (.mp3/.ogg also work). Tone() checks
+    /// there first and uses it instead of synthesizing — no code changes,
+    /// same drop-in-a-Resources-folder pattern as SoloGameVisuals.cs.
     /// </summary>
     public class SoundManager : MonoBehaviour
     {
@@ -44,10 +49,18 @@ namespace JesBox.Game
         /// <summary>Builds (and caches) a clip that plays each frequency in
         /// <paramref name="freqs"/> back-to-back for an equal share of
         /// <paramref name="totalDuration"/>, with a short fade in/out on each
-        /// segment so they don't click.</summary>
+        /// segment so they don't click. Skips synthesis entirely if a
+        /// hand-authored clip exists at Resources/Sounds/{key}.</summary>
         private AudioClip Tone(string key, float[] freqs, float totalDuration)
         {
             if (_cache.TryGetValue(key, out var cached)) return cached;
+
+            var custom = Resources.Load<AudioClip>($"Sounds/{key}");
+            if (custom != null)
+            {
+                _cache[key] = custom;
+                return custom;
+            }
 
             int totalSamples = Mathf.CeilToInt(SampleRate * totalDuration);
             var data = new float[totalSamples];

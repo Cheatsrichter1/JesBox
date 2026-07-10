@@ -20,7 +20,9 @@ The lobby screen shows a scannable QR code next to the room code and URL (top-le
 
 ## Sound Manager
 
-`Assets/Scripts/Game/SoundManager.cs` adds short audio cues (player join, round start, per-second countdown ticks/beeps, reveal, victory fanfare) at the key moments in every game mode. Every tone is synthesized procedurally at runtime (sine waves via `AudioClip.Create`, cached per cue) — there are no audio asset files to import, so sound works immediately on a fresh clone. Swap in real recorded SFX later by replacing a `Play*` method's body with `_source.PlayOneShot(yourClip)`.
+`Assets/Scripts/Game/SoundManager.cs` adds short audio cues (player join, round start, per-second countdown ticks/beeps, reveal, victory fanfare) at the key moments in every game mode. Every tone is synthesized procedurally at runtime (sine waves via `AudioClip.Create`, cached per cue) — there are no audio asset files to import, so sound works immediately on a fresh clone.
+
+**Drop in your own audio**: same Resources-folder pattern as the Chosen One visuals below. Put a clip named after the cue at `Assets/Resources/Sounds/{key}.wav` (`.mp3`/`.ogg` work too) — the cue keys are `click`, `join`, `roundstart`, `tick`, `countdown`, `reveal`, `victory`, `go`, `success`, `fail` (each one's usage is named in its `Play*` method in `SoundManager.cs`). `Tone()` checks there first and uses your clip instead of synthesizing one — no code changes needed, and cues you haven't replaced yet keep working procedurally.
 
 ## Chosen One visuals (unique art per minigame)
 
