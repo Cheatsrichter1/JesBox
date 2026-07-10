@@ -30,6 +30,15 @@ namespace JesBox.Game
             ["lobby.startGame"] = new[] { "Start Game", "Spiel starten" },
             ["lobby.playerReconnecting"] = new[] { "{0} (reconnecting...)", "{0} (verbindet erneut...)" },
 
+            ["host.players"] = new[] { "Players", "Spieler" },
+            ["host.playersTitle"] = new[] { "PLAYERS", "SPIELER" },
+            ["host.close"] = new[] { "Close", "Schließen" },
+            ["host.kick"] = new[] { "Kick", "Entfernen" },
+            ["host.pause"] = new[] { "Pause", "Pause" },
+            ["host.resume"] = new[] { "Resume", "Fortsetzen" },
+            ["host.skip"] = new[] { "Skip", "Überspringen" },
+            ["host.endGame"] = new[] { "End Game", "Spiel beenden" },
+
             ["mode.trivia"] = new[] { "Trivia Quiz", "Bibel-Quiz" },
             ["mode.microgames"] = new[] { "Microgames", "Minispiele" },
             ["mode.promptVote"] = new[] { "Prompt & Vote", "Abstimmung" },

@@ -71,6 +71,7 @@ function AppInner() {
   const [selectedChoice, setSelectedChoice] = useState(null);
   const [secretAnswer, setSecretAnswer] = useState(null); // Sketch That Verse: only set on the artist's phone
   const [charadeSecret, setCharadeSecret] = useState(null); // Bible Charades: only set on the performer's phone
+  const [paused, setPaused] = useState(false); // host control: overlays a banner without touching screen/game
   const wsRef = useRef(null);
   const sessionRef = useRef(null); // {roomCode, playerId, name} once joined
   const pendingNameRef = useRef('');
@@ -125,6 +126,13 @@ function AppInner() {
           setCharadeSecret(data);
           break;
         }
+        if (data.phase === 'pause_state') {
+          // Host control broadcast — overlays a banner without touching
+          // `game`/`screen`, so the underlying round picks up right where
+          // it left off once the host resumes.
+          setPaused(!!data.paused);
+          break;
+        }
         setGame(data);
         if (data.phase === 'question' || data.phase === 'vote_prompt' || data.phase === 'sketch_guess' || data.phase === 'charade_guess') setSelectedChoice(null);
         if (data.phase === 'sketch_draw') setSecretAnswer(null);
@@ -136,6 +144,23 @@ function AppInner() {
         clearSession();
         sessionRef.current = null;
         setError(t('error.hostLeft'));
+        setScreen('join');
+        break;
+      case 'kicked':
+        // Host control — final, unlike a dropped connection: don't let the
+        // socket closing (the server closes it right after this) trigger an
+        // auto-reconnect attempt.
+        clearSession();
+        sessionRef.current = null;
+        isRejoinRef.current = false;
+        reconnectAttemptRef.current = 0;
+        if (reconnectTimerRef.current) {
+          clearTimeout(reconnectTimerRef.current);
+          reconnectTimerRef.current = null;
+        }
+        if (wsRef.current) wsRef.current._jesboxHandled = true;
+        setPaused(false);
+        setError(t('error.kicked'));
         setScreen('join');
         break;
       default:
@@ -340,6 +365,11 @@ function AppInner() {
     <>
       <LanguageToggle />
       {content}
+      {paused && (
+        <div className="paused-overlay">
+          <div className="paused-badge">⏸ {t('paused.title')}</div>
+        </div>
+      )}
     </>
   );
 }

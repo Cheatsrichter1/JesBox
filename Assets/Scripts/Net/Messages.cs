@@ -93,6 +93,15 @@ namespace JesBox.Net
         public T data;
     }
 
+    /// <summary>Host control: forcibly removes a player. Unlike a normal
+    /// disconnect, this is final — the server doesn't hold the slot open for
+    /// a reconnect.</summary>
+    public class KickPlayerOut
+    {
+        public string type = "kick_player";
+        public string playerId;
+    }
+
     public class PlayerPublic
     {
         public string id;
@@ -105,6 +114,16 @@ namespace JesBox.Net
     {
         public string phase = "lobby";
         public List<PlayerPublic> players;
+    }
+
+    /// <summary>Host control: broadcast whenever the host pauses/resumes.
+    /// Phones intercept this by phase (like a targeted secret) rather than
+    /// treating it as a screen to switch to — the game phase underneath is
+    /// untouched, this just overlays a "Paused" banner on top of it.</summary>
+    public class PauseStatePayload
+    {
+        public string phase = "pause_state";
+        public bool paused;
     }
 
     // Trivia quiz

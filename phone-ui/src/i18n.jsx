@@ -19,6 +19,9 @@ const translations = {
     'error.connection': 'Connection error. Check the room code and try again.',
     'error.hostLeft': 'The host disconnected. Ask them to relaunch and rejoin.',
     'error.connectionLost': "Lost connection and couldn't reconnect. Please rejoin.",
+    'error.kicked': 'You were removed from the game by the host.',
+
+    'paused.title': 'Game Paused',
 
     'lobby.title': "You're in!",
     'lobby.room': 'Room {code}',
@@ -103,6 +106,9 @@ const translations = {
     'error.connection': 'Verbindungsfehler. Überprüfe den Raumcode und versuche es erneut.',
     'error.hostLeft': 'Der Host hat die Verbindung getrennt. Bitte neu starten und erneut beitreten.',
     'error.connectionLost': 'Verbindung verloren — erneutes Verbinden fehlgeschlagen. Bitte erneut beitreten.',
+    'error.kicked': 'Du wurdest vom Host aus dem Spiel entfernt.',
+
+    'paused.title': 'Spiel pausiert',
 
     'lobby.title': 'Du bist dabei!',
     'lobby.room': 'Raum {code}',

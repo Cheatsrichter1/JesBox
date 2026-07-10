@@ -63,6 +63,16 @@ namespace JesBox.Game
         private string _lastBroadcastJson;
         private readonly Dictionary<string, string> _lastTargetedJson = new Dictionary<string, string>();
 
+        // Host controls: pause freezes every round's timer (Dt() returns 0
+        // while paused), skip force-ends whichever round loop is currently
+        // running, and end-game additionally stops the outer per-mode loop
+        // from starting another round, falling through to FinishGame().
+        private bool _paused;
+        private bool _skipRequested;
+        private bool _endGameRequested;
+
+        private float Dt() => _paused ? 0f : Time.deltaTime;
+
         // Host-selected settings
         private GameMode _selectedMode = GameMode.Trivia;
         private Difficulty _selectedDifficulty = Difficulty.Medium;
@@ -176,6 +186,12 @@ namespace JesBox.Game
         private RectTransform _soloStage;
         private Text _soloVerbText;
         private Image _flashOverlay;
+        private RectTransform _hostControlsBar;
+        private Button _pauseButton, _skipButton, _endGameButton, _playersToggleButton;
+        private Text _pauseButtonLabel;
+        private RectTransform _playersOverlay;
+        private RectTransform _playersListGroup;
+        private bool _playersOverlayOpen;
 
         private void Awake()
         {
@@ -269,6 +285,7 @@ namespace JesBox.Game
                     _players[joined.playerId] = new PlayerState { Name = joined.name, Score = 0 };
                     RefreshLobbyUI();
                     BroadcastLobby();
+                    if (_playersOverlayOpen) RefreshPlayersOverlay();
                     _sound.PlayJoin();
                     break;
                 }
@@ -280,6 +297,7 @@ namespace JesBox.Game
                     _lastTargetedJson.Remove(left.playerId);
                     RefreshLobbyUI();
                     BroadcastLobby();
+                    if (_playersOverlayOpen) RefreshPlayersOverlay();
                     break;
                 }
 
@@ -293,6 +311,7 @@ namespace JesBox.Game
                         droppedPlayer.Disconnected = true;
                     RefreshLobbyUI();
                     BroadcastLobby();
+                    if (_playersOverlayOpen) RefreshPlayersOverlay();
                     break;
                 }
 
@@ -303,6 +322,7 @@ namespace JesBox.Game
                         backPlayer.Disconnected = false;
                     RefreshLobbyUI();
                     BroadcastLobby();
+                    if (_playersOverlayOpen) RefreshPlayersOverlay();
                     ResyncPlayer(reconnected.playerId);
                     _sound.PlayJoin();
                     break;
@@ -432,8 +452,12 @@ namespace JesBox.Game
         {
             if (_gameRunning || _players.Count == 0) return;
             _gameRunning = true;
+            _paused = false;
+            _skipRequested = false;
+            _endGameRequested = false;
             _startButton.gameObject.SetActive(false);
             _sound.PlayRoundStart();
+            UpdateHostControlsUI();
 
             switch (_selectedMode)
             {
@@ -450,6 +474,7 @@ namespace JesBox.Game
         {
             foreach (var player in _players.Values) player.Score = 0;
             _gameRunning = false;
+            _paused = false;
             _answersThisRound.Clear();
             _tapCounts.Clear();
             _submittedScores.Clear();
@@ -459,6 +484,7 @@ namespace JesBox.Game
             ClearSoloStage();
             RefreshLobbyUI();
             BroadcastLobby();
+            UpdateHostControlsUI();
             ShowOnly(_lobbyPanel);
         }
 
@@ -468,6 +494,57 @@ namespace JesBox.Game
             BroadcastGame(new FinalPayload { players = sorted });
             ShowFinalUI(sorted);
             _gameRunning = false;
+            _paused = false;
+            UpdateHostControlsUI();
+        }
+
+        // ---- Host controls: pause/resume, skip round, end game, kick ----
+
+        private void TogglePause()
+        {
+            if (!_gameRunning) return;
+            _paused = !_paused;
+            BroadcastGame(new PauseStatePayload { paused = _paused });
+            UpdateHostControlsUI();
+        }
+
+        private void RequestSkip()
+        {
+            if (!_gameRunning) return;
+            _skipRequested = true;
+        }
+
+        private void RequestEndGame()
+        {
+            if (!_gameRunning) return;
+            _endGameRequested = true;
+            _skipRequested = true; // also bail out of whatever round is live right now
+        }
+
+        private void KickPlayer(string playerId)
+        {
+            if (!_players.ContainsKey(playerId)) return;
+            _net.SendJson(new KickPlayerOut { playerId = playerId });
+            _players.Remove(playerId);
+            _lastTargetedJson.Remove(playerId);
+            RefreshLobbyUI();
+            BroadcastLobby();
+            RefreshPlayersOverlay();
+        }
+
+        private void TogglePlayersOverlay()
+        {
+            _playersOverlayOpen = !_playersOverlayOpen;
+            _playersOverlay.gameObject.SetActive(_playersOverlayOpen);
+            if (_playersOverlayOpen) RefreshPlayersOverlay();
+        }
+
+        private void UpdateHostControlsUI()
+        {
+            _pauseButton.gameObject.SetActive(_gameRunning);
+            _skipButton.gameObject.SetActive(_gameRunning);
+            _endGameButton.gameObject.SetActive(_gameRunning);
+            _pauseButtonLabel.text = _paused ? L.T("host.resume") : L.T("host.pause");
         }
 
         private static void Shuffle<T>(IList<T> list)
@@ -487,7 +564,7 @@ namespace JesBox.Game
             Shuffle(pool);
             int count = Mathf.Min(questionsPerGame, pool.Count);
 
-            for (int i = 0; i < count; i++)
+            for (int i = 0; i < count && !_endGameRequested; i++)
             {
                 yield return RunQuestion(pool[i], i, count);
             }
@@ -511,13 +588,14 @@ namespace JesBox.Game
             ShowQuestionUI(q, index, total);
 
             float elapsed = 0f;
-            while (elapsed < questionTimeLimit && _answersThisRound.Count < _players.Count)
+            while (elapsed < questionTimeLimit && _answersThisRound.Count < _players.Count && !_skipRequested)
             {
-                elapsed += Time.deltaTime;
+                elapsed += Dt();
                 _currentRemaining = Mathf.Max(0f, questionTimeLimit - elapsed);
                 UpdateQuestionTimerUI();
                 yield return null;
             }
+            _skipRequested = false;
 
             var deltas = new Dictionary<string, int>();
             foreach (var kv in _players)
@@ -546,7 +624,7 @@ namespace JesBox.Game
             var defs = new List<MicrogameDef>(Microgames.All);
             Shuffle(defs);
 
-            for (int i = 0; i < _microgameRounds; i++)
+            for (int i = 0; i < _microgameRounds && !_endGameRequested; i++)
             {
                 yield return RunMicrogameRound(defs[i % defs.Count], i, _microgameRounds);
             }
@@ -572,13 +650,14 @@ namespace JesBox.Game
             ShowMicrogameUI(def, index, total);
 
             float elapsed = 0f;
-            while (elapsed < def.Duration)
+            while (elapsed < def.Duration && !_skipRequested)
             {
-                elapsed += Time.deltaTime;
+                elapsed += Dt();
                 _currentRemaining = Mathf.Max(0f, def.Duration - elapsed);
                 UpdateMicrogameTimerUI(def.Duration);
                 yield return null;
             }
+            _skipRequested = false;
 
             // Small grace period for last-moment "submit_score" messages to arrive.
             yield return new WaitForSeconds(0.4f);
@@ -625,7 +704,7 @@ namespace JesBox.Game
             Shuffle(pool);
             int count = Mathf.Min(_votePromptCount, pool.Count);
 
-            for (int i = 0; i < count; i++)
+            for (int i = 0; i < count && !_endGameRequested; i++)
             {
                 yield return RunVoteRound(pool[i], i, count);
             }
@@ -650,13 +729,14 @@ namespace JesBox.Game
             ShowVotePromptUI(prompt, index, total);
 
             float elapsed = 0f;
-            while (elapsed < duration && _votesThisRound.Count < _players.Count)
+            while (elapsed < duration && _votesThisRound.Count < _players.Count && !_skipRequested)
             {
-                elapsed += Time.deltaTime;
+                elapsed += Dt();
                 _currentRemaining = Mathf.Max(0f, duration - elapsed);
                 UpdateQuestionTimerUI();
                 yield return null;
             }
+            _skipRequested = false;
 
             var tally = new int[prompt.Options.Length];
             foreach (var choice in _votesThisRound.Values)
@@ -704,7 +784,7 @@ namespace JesBox.Game
         {
             var bag = new List<string>();
 
-            for (int i = 0; i < _soloTurns; i++)
+            for (int i = 0; i < _soloTurns && !_endGameRequested; i++)
             {
                 string chosenId = PopNextChosenPlayer(bag);
                 if (chosenId == null) break; // everyone left
@@ -722,7 +802,7 @@ namespace JesBox.Game
         {
             var bag = new List<string>();
 
-            for (int i = 0; i < _sketchRounds; i++)
+            for (int i = 0; i < _sketchRounds && !_endGameRequested; i++)
             {
                 string chosenId = PopNextChosenPlayer(bag);
                 if (chosenId == null) break; // everyone left
@@ -799,14 +879,15 @@ namespace JesBox.Game
             });
 
             float elapsed = 0f;
-            while (elapsed < duration && !_soloRoundOver)
+            while (elapsed < duration && !_soloRoundOver && !_skipRequested)
             {
-                elapsed += Time.deltaTime;
+                elapsed += Dt();
                 _currentRemaining = Mathf.Max(0f, duration - elapsed);
                 UpdateSoloTimerUI(duration);
-                TickSoloGame(def.Kind, Time.deltaTime);
+                TickSoloGame(def.Kind, Dt());
                 yield return null;
             }
+            _skipRequested = false;
 
             // Ran out of time without a hit — Fiery Furnace Dash counts that as
             // a survival. Every other game requires an explicit action to win.
@@ -865,13 +946,14 @@ namespace JesBox.Game
             ClearSoloStage();
 
             float elapsed = 0f;
-            while (elapsed < drawDuration)
+            while (elapsed < drawDuration && !_skipRequested)
             {
-                elapsed += Time.deltaTime;
+                elapsed += Dt();
                 _currentRemaining = Mathf.Max(0f, drawDuration - elapsed);
                 UpdateSoloTimerUI(drawDuration);
                 yield return null;
             }
+            _skipRequested = false;
 
             // ---- Guess phase: everyone but the artist picks from 4 options.
             // Reuses _answersThisRound/"answer" — same shape as trivia guesses.
@@ -891,13 +973,14 @@ namespace JesBox.Game
 
             int guesserCount = Mathf.Max(0, _players.Count - 1);
             elapsed = 0f;
-            while (elapsed < SketchGuessDuration && _answersThisRound.Count < guesserCount)
+            while (elapsed < SketchGuessDuration && _answersThisRound.Count < guesserCount && !_skipRequested)
             {
-                elapsed += Time.deltaTime;
+                elapsed += Dt();
                 _currentRemaining = Mathf.Max(0f, SketchGuessDuration - elapsed);
                 UpdateSoloTimerUI(SketchGuessDuration);
                 yield return null;
             }
+            _skipRequested = false;
 
             _currentChosenId = null;
             _inSketchTurn = false;
@@ -941,7 +1024,7 @@ namespace JesBox.Game
         {
             var bag = new List<string>();
 
-            for (int i = 0; i < _charadeRounds; i++)
+            for (int i = 0; i < _charadeRounds && !_endGameRequested; i++)
             {
                 string chosenId = PopNextChosenPlayer(bag);
                 if (chosenId == null) break; // everyone left
@@ -977,13 +1060,14 @@ namespace JesBox.Game
             ShowCharadeTurnUI(chosenName, type, index, total);
 
             float elapsed = 0f;
-            while (elapsed < duration)
+            while (elapsed < duration && !_skipRequested)
             {
-                elapsed += Time.deltaTime;
+                elapsed += Dt();
                 _currentRemaining = Mathf.Max(0f, duration - elapsed);
                 UpdateSoloTimerUI(duration);
                 yield return null;
             }
+            _skipRequested = false;
 
             // ---- Guess phase: everyone but the performer picks from 4
             // options. Reuses _answersThisRound/"answer" — same shape as
@@ -1004,13 +1088,14 @@ namespace JesBox.Game
 
             int guesserCount = Mathf.Max(0, _players.Count - 1);
             elapsed = 0f;
-            while (elapsed < CharadeGuessDuration && _answersThisRound.Count < guesserCount)
+            while (elapsed < CharadeGuessDuration && _answersThisRound.Count < guesserCount && !_skipRequested)
             {
-                elapsed += Time.deltaTime;
+                elapsed += Dt();
                 _currentRemaining = Mathf.Max(0f, CharadeGuessDuration - elapsed);
                 UpdateSoloTimerUI(CharadeGuessDuration);
                 yield return null;
             }
+            _skipRequested = false;
 
             _currentChosenId = null;
 
@@ -1284,6 +1369,85 @@ namespace JesBox.Game
             var flashRt = UIFactory.CreateFullStretchPanel(_canvasRoot, "FlashOverlay", new Color(1f, 1f, 1f, 0f));
             _flashOverlay = flashRt.GetComponent<Image>();
             _flashOverlay.raycastTarget = false;
+
+            // Persistent host controls — sit on top of whichever mode panel is
+            // currently active (added last = highest in the raycast order),
+            // so pause/skip/end/kick work no matter what's on screen.
+            _hostControlsBar = BuildHostControlsBar(_canvasRoot);
+            _playersOverlay = BuildPlayersOverlay(_canvasRoot);
+            _playersOverlay.gameObject.SetActive(false);
+        }
+
+        private RectTransform BuildHostControlsBar(Transform parent)
+        {
+            var group = UIFactory.CreateGroup(parent, "HostControls");
+
+            _playersToggleButton = UIFactory.CreateButton(group, L.T("host.players"), new Vector2(830, -460), new Vector2(160, 56));
+            _playersToggleButton.onClick.AddListener(TogglePlayersOverlay);
+
+            _endGameButton = UIFactory.CreateButton(group, L.T("host.endGame"), new Vector2(650, -460), new Vector2(160, 56));
+            _endGameButton.onClick.AddListener(RequestEndGame);
+
+            _pauseButton = UIFactory.CreateButton(group, L.T("host.pause"), new Vector2(830, -524), new Vector2(160, 56));
+            _pauseButton.onClick.AddListener(TogglePause);
+            _pauseButtonLabel = _pauseButton.GetComponentInChildren<Text>();
+
+            _skipButton = UIFactory.CreateButton(group, L.T("host.skip"), new Vector2(650, -524), new Vector2(160, 56));
+            _skipButton.onClick.AddListener(RequestSkip);
+
+            _pauseButton.gameObject.SetActive(false);
+            _skipButton.gameObject.SetActive(false);
+            _endGameButton.gameObject.SetActive(false);
+
+            return group;
+        }
+
+        private RectTransform BuildPlayersOverlay(Transform parent)
+        {
+            var panel = UIFactory.CreateFullStretchPanel(parent, "PlayersOverlay", new Color(0f, 0f, 0f, 0.75f));
+
+            UIFactory.CreateText(panel, L.T("host.playersTitle"), 36, UIFactory.Gold, TextAnchor.MiddleCenter,
+                new Vector2(0, 420), new Vector2(800, 60), FontStyle.Bold);
+
+            var closeBtn = UIFactory.CreateButton(panel, L.T("host.close"), new Vector2(0, -420), new Vector2(240, 70));
+            closeBtn.onClick.AddListener(TogglePlayersOverlay);
+
+            _playersListGroup = UIFactory.CreateGroup(panel, "PlayersList");
+            _playersListGroup.anchoredPosition = new Vector2(0, 40);
+
+            return panel;
+        }
+
+        private void RefreshPlayersOverlay()
+        {
+            if (_playersListGroup == null) return;
+            for (int i = _playersListGroup.childCount - 1; i >= 0; i--)
+                Destroy(_playersListGroup.GetChild(i).gameObject);
+
+            const float rowHeight = 56f;
+            const float rowGap = 10f;
+            var players = _players.ToList();
+
+            if (players.Count == 0)
+            {
+                UIFactory.CreateText(_playersListGroup, L.T("lobby.waiting"), 26, UIFactory.Cream, TextAnchor.MiddleCenter,
+                    new Vector2(0, 0), new Vector2(600, 60));
+                return;
+            }
+
+            float startY = (players.Count - 1) * (rowHeight + rowGap) / 2f;
+            for (int i = 0; i < players.Count; i++)
+            {
+                var (playerId, state) = (players[i].Key, players[i].Value);
+                float y = startY - i * (rowHeight + rowGap);
+
+                string rowLabel = state.Disconnected ? L.T("lobby.playerReconnecting", state.Name) : state.Name;
+                UIFactory.CreateText(_playersListGroup, $"{rowLabel} — {state.Score}", 26, UIFactory.Cream, TextAnchor.MiddleLeft,
+                    new Vector2(-140, y), new Vector2(520, rowHeight));
+
+                var kickBtn = UIFactory.CreateButton(_playersListGroup, L.T("host.kick"), new Vector2(280, y), new Vector2(140, rowHeight - 8));
+                kickBtn.onClick.AddListener(() => KickPlayer(playerId));
+            }
         }
 
         private void SelectLanguage(Language lang)
@@ -1291,14 +1455,25 @@ namespace JesBox.Game
             if (L.Current == lang) return;
             L.Current = lang;
 
-            // The lobby is the only panel with static translated labels that
-            // are already built by the time the host can change language, so
-            // just rebuild it in place rather than tracking every Text ref.
+            // The lobby, host controls bar, and players overlay are the only
+            // pieces with static translated labels that are already built by
+            // the time the host can change language, so just rebuild them in
+            // place rather than tracking every Text ref. Language can only be
+            // changed from the lobby screen, which means a game can't be
+            // running and the players overlay can't be open — both rebuild
+            // straight back to their default (hidden/closed) state safely.
             Destroy(_lobbyPanel.gameObject);
             _lobbyPanel = BuildLobbyPanel(_canvasRoot);
             ShowOnly(_lobbyPanel);
             RefreshLobbyUI();
             ApplyOrFetchQr();
+
+            Destroy(_hostControlsBar.gameObject);
+            Destroy(_playersOverlay.gameObject);
+            _playersOverlayOpen = false;
+            _hostControlsBar = BuildHostControlsBar(_canvasRoot);
+            _playersOverlay = BuildPlayersOverlay(_canvasRoot);
+            _playersOverlay.gameObject.SetActive(false);
         }
 
         private RectTransform BuildLobbyPanel(Transform parent)

@@ -60,6 +60,17 @@ If a phone's WebSocket drops mid-game (network blip, backgrounded tab, accidenta
 
 This only covers a *player's* phone dropping — if the host (TV/Unity) itself disconnects, the room is torn down immediately (`host_left`) and everyone has to wait for it to relaunch and recreate the room, since all game state lives in that one Unity process.
 
+## Host controls
+
+A small persistent control bar sits in the bottom-right corner of the TV screen, on top of whichever mode panel is currently showing, so it works no matter what's on screen mid-game:
+
+- **Pause / Resume** — freezes every round's timer (and any live gameplay driven by it — falling flames, moving targets, drawing/guessing countdowns) in place. Internally every round loop reads elapsed time through a single `Dt()` helper that returns `0` while paused, so nothing needs its own pause-awareness. Every phone gets a small "⏸ Game Paused" banner overlaid on top of whatever it's currently showing (via a `pause_state` broadcast intercepted the same way targeted secrets are) — the underlying screen doesn't change, so resuming just picks up exactly where it left off.
+- **Skip** — force-ends whichever round is currently in progress (question, microgame, vote, Chosen One turn, Sketch & Guess draw/guess phase, Bible Charades turn/guess phase) right now, same as if its timer had run out.
+- **End Game** — force-ends the current round *and* stops the mode from starting another one, dropping straight to the final scoreboard.
+- **Players** — toggles an overlay listing every current player (including anyone mid-reconnect-grace-period) with score and a **Kick** button. Kicking sends a host-only `kick_player` message; the server closes that player's socket immediately and drops their slot for good — unlike an ordinary disconnect, a kicked player is not eligible to rejoin with the same identity.
+
+Pause/Skip/End Game only appear once a game is running; Players is available anytime (including in the lobby, to remove someone before you even start).
+
 ## Running it locally (dev loop)
 
 You need 3 things running at once while developing:

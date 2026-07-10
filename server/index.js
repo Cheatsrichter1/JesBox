@@ -148,6 +148,20 @@ wss.on('connection', (ws) => {
         break;
       }
 
+      case 'kick_player': {
+        // Host-only: forcibly remove a player. Unlike a normal disconnect,
+        // this is final — no grace period, no chance to rejoin.
+        const room = rooms.get(ws.roomCode);
+        if (!room || ws.role !== 'host') return;
+        const target = room.players.get(msg.playerId);
+        if (!target) return;
+        if (target.disconnectTimer) clearTimeout(target.disconnectTimer);
+        send(target.ws, { type: 'kicked' });
+        if (target.ws) target.ws.close();
+        room.players.delete(msg.playerId);
+        break;
+      }
+
       default:
         break; // ignore unknown message types
     }
