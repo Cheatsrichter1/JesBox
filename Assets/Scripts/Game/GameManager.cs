@@ -129,7 +129,7 @@ namespace JesBox.Game
         // Parting the Sea
         private int _soloPartingCount;
         private int _soloPartingLastDir;
-        private const int SoloPartingTarget = 5;
+        private const int SoloPartingTarget = 8;
         private const float SoloPartingSteerThreshold = 0.5f;
 
         // Sketch That Verse (draw phase renders live strokes from the artist's
@@ -143,6 +143,10 @@ namespace JesBox.Game
         private static readonly Vector2 SoloStageDefaultPos = new Vector2(0f, -40f);
         private static readonly Vector2 SketchStageSize = new Vector2(900f, 480f);
         private static readonly Vector2 SketchStagePos = new Vector2(0f, -10f);
+        // Parting the Sea's diorama was hard to make out at the default
+        // Chosen One stage size — noticeably bigger so it actually reads.
+        private static readonly Vector2 PartingTheSeaStageSize = new Vector2(1600f, 800f);
+        private static readonly Vector2 PartingTheSeaStagePos = new Vector2(0f, -140f);
         private const float SketchGuessDuration = 10f;
         private const int SketchGuesserPoints = 500;
         private const int SketchArtistPointsPerGuesser = 150;
@@ -858,8 +862,16 @@ namespace JesBox.Game
             string chosenName = _players[chosenId].Name;
 
             ShowSoloTurnUI(def, chosenName, index, total);
-            _soloStage.anchoredPosition = SoloStageDefaultPos;
-            _soloStage.sizeDelta = SoloStageDefaultSize;
+            if (def.Kind == SoloGameKind.PartingTheSea)
+            {
+                _soloStage.anchoredPosition = PartingTheSeaStagePos;
+                _soloStage.sizeDelta = PartingTheSeaStageSize;
+            }
+            else
+            {
+                _soloStage.anchoredPosition = SoloStageDefaultPos;
+                _soloStage.sizeDelta = SoloStageDefaultSize;
+            }
             _soloStage.localScale = Vector3.one;
             SetupSoloStage(def.Kind);
 
@@ -1218,17 +1230,18 @@ namespace JesBox.Game
         /// (full left) to 1 (full right). Scoring reuses the same "must
         /// alternate sides" idea the old discrete left/right taps used —
         /// leaning past the threshold on one side, then past it on the
-        /// other, counts as one swing.</summary>
+        /// other, counts as one swing. The visual only hears about it once
+        /// a swing actually lands (see <see cref="ISteerableSoloGameVisual.Pulse"/>),
+        /// not on every raw tilt sample.</summary>
         private void HandleSoloSteer(float x)
         {
             if (_soloRoundOver || _currentSoloKind != SoloGameKind.PartingTheSea) return;
-
-            if (_soloVisual is ISteerableSoloGameVisual steerable) steerable.SetSteer(x);
 
             int dir = x > SoloPartingSteerThreshold ? 1 : (x < -SoloPartingSteerThreshold ? -1 : 0);
             if (dir == 0 || dir == _soloPartingLastDir) return; // no decisive lean, or same side as last swing
             _soloPartingLastDir = dir;
             _soloPartingCount++;
+            if (_soloVisual is ISteerableSoloGameVisual steerable) steerable.Pulse();
             _soloVisual?.SetProgress(_soloPartingCount / (float)SoloPartingTarget);
             if (_soloPartingCount >= SoloPartingTarget)
             {

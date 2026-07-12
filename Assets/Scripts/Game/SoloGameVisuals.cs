@@ -1,3 +1,4 @@
+using System.Collections;
 using UnityEngine;
 using UnityEngine.UI;
 
@@ -31,19 +32,19 @@ namespace JesBox.Game
     }
 
     /// <summary>
-    /// Optional extension for a visual that also has something continuously
-    /// steerable — e.g. Parting the Sea's cone, tilted left/right by the
-    /// chosen player's phone like a Wii remote. GameManager checks for this
-    /// via an `is` pattern rather than putting it on every visual, since most
-    /// Chosen One games don't have anything to steer.
+    /// Optional extension for a visual that also has something to react when
+    /// the chosen player successfully swings their phone — e.g. Parting the
+    /// Sea's cone, tilted left/right like a Wii remote. GameManager checks
+    /// for this via an `is` pattern rather than putting it on every visual,
+    /// since most Chosen One games don't have anything like this.
     /// </summary>
     public interface ISteerableSoloGameVisual : ISoloGameVisual
     {
-        /// <summary>-1 (full left) to 1 (full right), sent continuously while
-        /// the player is tilting/dragging. Purely cosmetic, same as
-        /// <see cref="ISoloGameVisual.SetProgress"/> — GameManager decides
-        /// win/lose from the pattern of values, not this call itself.</summary>
-        void SetSteer(float x);
+        /// <summary>Called once each time a swing is counted (the player
+        /// leaned decisively to one side, then the other). Purely cosmetic,
+        /// same as <see cref="ISoloGameVisual.SetProgress"/> — GameManager
+        /// decides win/lose independently, not from this call.</summary>
+        void Pulse();
     }
 
     /// <summary>
@@ -339,14 +340,20 @@ namespace JesBox.Game
     /// </summary>
     public class PartingTheSeaCustomVisual : MonoBehaviour, ISteerableSoloGameVisual
     {
-        private const int RenderWidth = 900;
-        private const int RenderHeight = 420;
+        // Matches PartingTheSeaStageSize in GameManager.cs — this game's
+        // stage is enlarged well past the default Chosen One size, so the
+        // render texture is upsized to match rather than look blurry stretched.
+        private const int RenderWidth = 1600;
+        private const int RenderHeight = 800;
         // How far apart (world units) the water fronts end up at full
         // progress. Bumped up from the original 3 — at the authored camera
         // distance/FOV that was barely visible.
-        private const float MaxSpread = 9f;
-        // How far left/right (world units) the cone swings at full tilt.
-        private const float MaxSteer = 4f;
+        private const float MaxSpread = 25f;
+        // How far (world units) the cone bounces to the right and back on
+        // each counted swing.
+        private const float PulseDistance = 1f;
+        private const float PulseOutTime = 0.08f;
+        private const float PulseBackTime = 0.14f;
 
         private Camera _camera;
         private RenderTexture _renderTexture;
@@ -355,6 +362,7 @@ namespace JesBox.Game
         private Vector3 _wallABase, _wallBBase;
         private Transform _cone;
         private Vector3 _coneBase;
+        private Coroutine _pulseCoroutine;
 
         public void Setup(RectTransform stage)
         {
@@ -364,8 +372,11 @@ namespace JesBox.Game
             if (_wallA != null) _wallABase = _wallA.localPosition;
             if (_wallB != null) _wallBBase = _wallB.localPosition;
 
+            // World position, not local — the cone's own parent/rotation in
+            // the authored hierarchy isn't guaranteed to have local X line up
+            // with true left/right the way the root-level water fronts do.
             _cone = FindDeep("Cone");
-            if (_cone != null) _coneBase = _cone.localPosition;
+            if (_cone != null) _coneBase = _cone.position;
 
             if (_camera == null)
             {
@@ -395,7 +406,6 @@ namespace JesBox.Game
             _display.raycastTarget = false;
 
             SetProgress(0f);
-            SetSteer(0f);
         }
 
         public void SetProgress(float fraction)
@@ -405,11 +415,38 @@ namespace JesBox.Game
             if (_wallB != null) _wallB.localPosition = _wallBBase + new Vector3(spread, 0f, 0f);
         }
 
-        public void SetSteer(float x)
+        /// <summary>Bounces the cone one unit to the right (world space) and
+        /// back to its starting spot — a quick, punchy hit of feedback each
+        /// time a swing lands, rather than continuously tracking raw tilt.</summary>
+        public void Pulse()
         {
             if (_cone == null) return;
-            float offset = Mathf.Clamp(x, -1f, 1f) * MaxSteer;
-            _cone.localPosition = _coneBase + new Vector3(offset, 0f, 0f);
+            if (_pulseCoroutine != null) StopCoroutine(_pulseCoroutine);
+            _pulseCoroutine = StartCoroutine(PulseRoutine());
+        }
+
+        private IEnumerator PulseRoutine()
+        {
+            Vector3 target = _coneBase + new Vector3(PulseDistance, 0f, 0f);
+
+            float t = 0f;
+            while (t < PulseOutTime)
+            {
+                t += Time.deltaTime;
+                _cone.position = Vector3.Lerp(_coneBase, target, Mathf.Clamp01(t / PulseOutTime));
+                yield return null;
+            }
+            _cone.position = target;
+
+            t = 0f;
+            while (t < PulseBackTime)
+            {
+                t += Time.deltaTime;
+                _cone.position = Vector3.Lerp(target, _coneBase, Mathf.Clamp01(t / PulseBackTime));
+                yield return null;
+            }
+            _cone.position = _coneBase;
+            _pulseCoroutine = null;
         }
 
         public void Teardown()
