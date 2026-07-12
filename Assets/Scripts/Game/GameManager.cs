@@ -130,6 +130,7 @@ namespace JesBox.Game
         private int _soloPartingCount;
         private int _soloPartingLastDir;
         private const int SoloPartingTarget = 5;
+        private const float SoloPartingSteerThreshold = 0.5f;
 
         // Sketch That Verse (draw phase renders live strokes from the artist's
         // phone onto _soloStage; guess phase reuses _answersThisRound). The
@@ -357,6 +358,9 @@ namespace JesBox.Game
                             break;
                         case "shake":
                             if (game.playerId == _currentChosenId) HandleSoloShake();
+                            break;
+                        case "steer":
+                            if (game.playerId == _currentChosenId) HandleSoloSteer(game.data.x);
                             break;
                         case "draw_point":
                             if (game.playerId == _currentChosenId && _inSketchTurn)
@@ -1203,24 +1207,33 @@ namespace JesBox.Game
         private void HandleSoloMove(int direction)
         {
             if (direction == 0 || _soloRoundOver) return;
+            if (_currentSoloKind != SoloGameKind.FieryFurnaceDash) return;
 
-            if (_currentSoloKind == SoloGameKind.FieryFurnaceDash)
+            _soloLane = Mathf.Clamp(_soloLane + (direction > 0 ? 1 : -1), 0, 2);
+            UpdateSoloPlayerMarkerPosition();
+        }
+
+        /// <summary>Parting the Sea's control: the chosen phone tilts (or
+        /// drags) like a Wii remote and continuously reports its lean, -1
+        /// (full left) to 1 (full right). Scoring reuses the same "must
+        /// alternate sides" idea the old discrete left/right taps used —
+        /// leaning past the threshold on one side, then past it on the
+        /// other, counts as one swing.</summary>
+        private void HandleSoloSteer(float x)
+        {
+            if (_soloRoundOver || _currentSoloKind != SoloGameKind.PartingTheSea) return;
+
+            if (_soloVisual is ISteerableSoloGameVisual steerable) steerable.SetSteer(x);
+
+            int dir = x > SoloPartingSteerThreshold ? 1 : (x < -SoloPartingSteerThreshold ? -1 : 0);
+            if (dir == 0 || dir == _soloPartingLastDir) return; // no decisive lean, or same side as last swing
+            _soloPartingLastDir = dir;
+            _soloPartingCount++;
+            _soloVisual?.SetProgress(_soloPartingCount / (float)SoloPartingTarget);
+            if (_soloPartingCount >= SoloPartingTarget)
             {
-                _soloLane = Mathf.Clamp(_soloLane + (direction > 0 ? 1 : -1), 0, 2);
-                UpdateSoloPlayerMarkerPosition();
-            }
-            else if (_currentSoloKind == SoloGameKind.PartingTheSea)
-            {
-                int dir = direction > 0 ? 1 : -1;
-                if (dir == _soloPartingLastDir) return; // must alternate direction each tap
-                _soloPartingLastDir = dir;
-                _soloPartingCount++;
-                _soloVisual?.SetProgress(_soloPartingCount / (float)SoloPartingTarget);
-                if (_soloPartingCount >= SoloPartingTarget)
-                {
-                    _soloRoundOver = true;
-                    _soloWon = true;
-                }
+                _soloRoundOver = true;
+                _soloWon = true;
             }
         }
 

@@ -65,6 +65,8 @@ const translations = {
     'solo.go': 'GO!',
     'solo.shakeReady': '📳 SHAKE!',
     'solo.shakeNotReady': '🙏 PRAY (tap or shake)!',
+    'solo.tiltHint': '📱 Tilt your phone left/right (or drag the wave below)!',
+    'solo.tiltPermission': 'Tap or drag the wave below to start — then tilt your phone!',
 
     'sketch.roomBadge': 'Sketch That Verse',
     'sketch.drawLabel': 'Draw: {answer}',
@@ -152,6 +154,8 @@ const translations = {
     'solo.go': 'LOS!',
     'solo.shakeReady': '📳 SCHÜTTELN!',
     'solo.shakeNotReady': '🙏 BETEN (tippen oder schütteln)!',
+    'solo.tiltHint': '📱 Kippe dein Handy nach links/rechts (oder zieh die Welle unten)!',
+    'solo.tiltPermission': 'Tippe oder zieh die Welle unten, um zu starten — dann kippe dein Handy!',
 
     'sketch.roomBadge': 'Zeichne die Szene',
     'sketch.drawLabel': 'Zeichne: {answer}',

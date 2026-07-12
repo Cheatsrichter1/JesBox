@@ -287,6 +287,10 @@ function AppInner() {
     sendAction({ action: 'shake' });
   }, [sendAction]);
 
+  const steer = useCallback((x) => {
+    sendAction({ action: 'steer', x });
+  }, [sendAction]);
+
   const drawPoint = useCallback((x, y, newStroke, colorIndex, brushSize) => {
     sendAction({ action: 'draw_point', x, y, newStroke, colorIndex, brushSize });
   }, [sendAction]);
@@ -327,7 +331,7 @@ function AppInner() {
       content = <VoteRevealScreen game={game} playerId={playerId} />;
       break;
     case 'solo_turn':
-      content = <SoloTurnScreen game={game} playerId={playerId} onMove={move} onFire={fire} onShake={shake} />;
+      content = <SoloTurnScreen game={game} playerId={playerId} onMove={move} onFire={fire} onShake={shake} onSteer={steer} />;
       break;
     case 'solo_reveal':
       content = <RoundRevealScreen game={game} playerId={playerId} />;

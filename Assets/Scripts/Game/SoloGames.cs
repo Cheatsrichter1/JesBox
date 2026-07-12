@@ -66,9 +66,9 @@ namespace JesBox.Game
                 "Du hast EINEN Versuch — tippe auf VERMEHREN!, sobald der Korb ausgerichtet ist!",
                 "MULTIPLY!", "VERMEHREN!", 4f),
             new SoloGameDef(SoloGameKind.PartingTheSea, "Parting the Sea", "Die Teilung des Meeres",
-                "Tap LEFT, RIGHT, LEFT, RIGHT — fast! — to part the waters!",
-                "Tippe LINKS, RECHTS, LINKS, RECHTS — schnell! —, um das Wasser zu teilen!",
-                "GO!", "LOS!", 4f),
+                "Tilt your phone LEFT and RIGHT like a steering wheel — swing side to side to part the waters!",
+                "Kippe dein Handy wie ein Lenkrad nach LINKS und RECHTS — schwing hin und her, um das Wasser zu teilen!",
+                "GO!", "LOS!", 5f),
         };
     }
 }

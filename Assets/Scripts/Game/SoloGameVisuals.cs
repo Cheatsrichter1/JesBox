@@ -31,6 +31,22 @@ namespace JesBox.Game
     }
 
     /// <summary>
+    /// Optional extension for a visual that also has something continuously
+    /// steerable — e.g. Parting the Sea's cone, tilted left/right by the
+    /// chosen player's phone like a Wii remote. GameManager checks for this
+    /// via an `is` pattern rather than putting it on every visual, since most
+    /// Chosen One games don't have anything to steer.
+    /// </summary>
+    public interface ISteerableSoloGameVisual : ISoloGameVisual
+    {
+        /// <summary>-1 (full left) to 1 (full right), sent continuously while
+        /// the player is tilting/dragging. Purely cosmetic, same as
+        /// <see cref="ISoloGameVisual.SetProgress"/> — GameManager decides
+        /// win/lose from the pattern of values, not this call itself.</summary>
+        void SetSteer(float x);
+    }
+
+    /// <summary>
     /// Builds the visual for a given <see cref="SoloGameKind"/>. Looks for a
     /// hand-authored prefab first — drop your own art into
     /// <c>Assets/Resources/SoloVisuals/{KindName}.prefab</c> and it's picked
@@ -311,25 +327,34 @@ namespace JesBox.Game
     /// Adapter for a hand-authored SoloVisuals/PartingTheSea.prefab that has
     /// no script of its own — SoloGameVisualFactory attaches this straight
     /// onto the instantiated prefab at runtime. Finds a camera named
-    /// "RenderCam" and two objects named "WaterFront1"/"WaterFront2" anywhere
-    /// in the prefab's hierarchy; redirects the camera to a RenderTexture
-    /// (displayed via a RawImage on the stage, same as the placeholder) and
-    /// nudges the two water fronts apart as progress increases. Everything
-    /// else in the prefab (ground, sea surface, decoration, lighting) is
-    /// left exactly as authored. If "RenderCam" isn't found, nothing is
-    /// drawn — check the name matches exactly.
+    /// "RenderCam", two objects named "WaterFront1"/"WaterFront2", and (if
+    /// present) one named "Cone" anywhere in the prefab's hierarchy; redirects
+    /// the camera to a RenderTexture (displayed via a RawImage on the stage,
+    /// same as the placeholder), nudges the two water fronts apart as
+    /// progress increases, and slides the cone left/right live as the chosen
+    /// player tilts their phone. Everything else in the prefab (ground, sea
+    /// surface, decoration, lighting) is left exactly as authored. If
+    /// "RenderCam" isn't found, nothing is drawn — check the name matches
+    /// exactly.
     /// </summary>
-    public class PartingTheSeaCustomVisual : MonoBehaviour, ISoloGameVisual
+    public class PartingTheSeaCustomVisual : MonoBehaviour, ISteerableSoloGameVisual
     {
         private const int RenderWidth = 900;
         private const int RenderHeight = 420;
-        private const float MaxSpread = 3f;
+        // How far apart (world units) the water fronts end up at full
+        // progress. Bumped up from the original 3 — at the authored camera
+        // distance/FOV that was barely visible.
+        private const float MaxSpread = 9f;
+        // How far left/right (world units) the cone swings at full tilt.
+        private const float MaxSteer = 4f;
 
         private Camera _camera;
         private RenderTexture _renderTexture;
         private RawImage _display;
         private Transform _wallA, _wallB;
         private Vector3 _wallABase, _wallBBase;
+        private Transform _cone;
+        private Vector3 _coneBase;
 
         public void Setup(RectTransform stage)
         {
@@ -338,6 +363,9 @@ namespace JesBox.Game
             _wallB = FindDeep("WaterFront2");
             if (_wallA != null) _wallABase = _wallA.localPosition;
             if (_wallB != null) _wallBBase = _wallB.localPosition;
+
+            _cone = FindDeep("Cone");
+            if (_cone != null) _coneBase = _cone.localPosition;
 
             if (_camera == null)
             {
@@ -367,6 +395,7 @@ namespace JesBox.Game
             _display.raycastTarget = false;
 
             SetProgress(0f);
+            SetSteer(0f);
         }
 
         public void SetProgress(float fraction)
@@ -374,6 +403,13 @@ namespace JesBox.Game
             float spread = Mathf.Lerp(0f, MaxSpread, Mathf.Clamp01(fraction));
             if (_wallA != null) _wallA.localPosition = _wallABase + new Vector3(-spread, 0f, 0f);
             if (_wallB != null) _wallB.localPosition = _wallBBase + new Vector3(spread, 0f, 0f);
+        }
+
+        public void SetSteer(float x)
+        {
+            if (_cone == null) return;
+            float offset = Mathf.Clamp(x, -1f, 1f) * MaxSteer;
+            _cone.localPosition = _coneBase + new Vector3(offset, 0f, 0f);
         }
 
         public void Teardown()

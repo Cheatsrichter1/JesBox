@@ -75,15 +75,111 @@ function ShakeController({ onShake }) {
   );
 }
 
+function TiltController({ onSteer }) {
+  const { t } = useLanguage();
+  const [steer, setSteer] = useState(0);
+  const [motionReady, setMotionReady] = useState(false);
+  const permissionRequestedRef = useRef(false);
+  const lastSendRef = useRef(0);
+  const draggingRef = useRef(false);
+  const trackRef = useRef(null);
+
+  const sendThrottled = (value) => {
+    const now = performance.now();
+    if (now - lastSendRef.current < 40) return;
+    lastSendRef.current = now;
+    onSteer(value);
+  };
+
+  useEffect(() => {
+    const TILT_RANGE_DEG = 30; // phone tilt at which we report full left/right
+
+    const handleOrientation = (event) => {
+      if (event.gamma == null || draggingRef.current) return;
+      const normalized = Math.max(-1, Math.min(1, event.gamma / TILT_RANGE_DEG));
+      setSteer(normalized);
+      sendThrottled(normalized);
+    };
+
+    window.addEventListener('deviceorientation', handleOrientation);
+    if (typeof DeviceOrientationEvent === 'undefined' || typeof DeviceOrientationEvent.requestPermission !== 'function') {
+      setMotionReady(true);
+    }
+
+    return () => window.removeEventListener('deviceorientation', handleOrientation);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const requestMotionIfNeeded = () => {
+    if (!permissionRequestedRef.current && typeof DeviceOrientationEvent !== 'undefined' &&
+        typeof DeviceOrientationEvent.requestPermission === 'function') {
+      permissionRequestedRef.current = true;
+      DeviceOrientationEvent.requestPermission()
+        .then((result) => setMotionReady(result === 'granted'))
+        .catch(() => {});
+    }
+  };
+
+  const updateFromPointer = (clientX) => {
+    const track = trackRef.current;
+    if (!track) return;
+    const rect = track.getBoundingClientRect();
+    const ratio = (clientX - rect.left) / rect.width;
+    const normalized = Math.max(-1, Math.min(1, ratio * 2 - 1));
+    setSteer(normalized);
+    sendThrottled(normalized);
+  };
+
+  const handleStart = (e) => {
+    draggingRef.current = true;
+    requestMotionIfNeeded();
+    updateFromPointer(e.touches ? e.touches[0].clientX : e.clientX);
+  };
+  const handleDrag = (e) => {
+    if (!draggingRef.current) return;
+    updateFromPointer(e.touches ? e.touches[0].clientX : e.clientX);
+  };
+  const handleEnd = () => {
+    if (!draggingRef.current) return;
+    draggingRef.current = false;
+    setSteer(0);
+    onSteer(0);
+  };
+
+  return (
+    <div className="tilt-controller">
+      <p className="tilt-hint">{motionReady ? t('solo.tiltHint') : t('solo.tiltPermission')}</p>
+      <div
+        className="tilt-track"
+        ref={trackRef}
+        onMouseDown={handleStart}
+        onMouseMove={handleDrag}
+        onMouseUp={handleEnd}
+        onMouseLeave={handleEnd}
+        onTouchStart={handleStart}
+        onTouchMove={handleDrag}
+        onTouchEnd={handleEnd}
+      >
+        <div className="tilt-center-line" />
+        <div className="tilt-marker" style={{ left: `${((steer + 1) / 2) * 100}%` }}>🌊</div>
+      </div>
+      <div className="tilt-labels">
+        <span>{t('solo.dirLeft')}</span>
+        <span>{t('solo.dirRight')}</span>
+      </div>
+    </div>
+  );
+}
+
 const CONTROLLERS = {
   FieryFurnaceDash: DirectionController,
-  PartingTheSea: DirectionController,
+  PartingTheSea: TiltController,
   DavidsSlingshot: FireController,
   LoavesAndFishesMultiply: FireController,
   JoyfulPrayer: ShakeController,
 };
 
-export default function SoloTurnScreen({ game, playerId, onMove, onFire, onShake }) {
+export default function SoloTurnScreen({ game, playerId, onMove, onFire, onShake, onSteer }) {
   const { t } = useLanguage();
   if (!game) return null;
   const isMe = game.chosenId === playerId;
@@ -111,7 +207,7 @@ export default function SoloTurnScreen({ game, playerId, onMove, onFire, onShake
       <p className="question-text">{game.title}</p>
       <p className="subtitle">{game.controllerInstructions}</p>
       <p className="solo-watch-hint">{t('solo.watchHint')}</p>
-      {Controller && <Controller kind={game.kind} onMove={onMove} onFire={onFire} onShake={onShake} />}
+      {Controller && <Controller kind={game.kind} onMove={onMove} onFire={onFire} onShake={onShake} onSteer={onSteer} />}
     </div>
   );
 }
