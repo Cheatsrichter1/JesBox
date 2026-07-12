@@ -33,11 +33,17 @@ namespace JesBox.Game
     /// <summary>
     /// Builds the visual for a given <see cref="SoloGameKind"/>. Looks for a
     /// hand-authored prefab first — drop your own art into
-    /// <c>Assets/Resources/SoloVisuals/{KindName}.prefab</c> with a root
-    /// component implementing <see cref="ISoloGameVisual"/> and it's picked
-    /// up automatically, no code changes needed. Falls back to a built-in
-    /// placeholder for the kinds that have one; everything else keeps using
-    /// GameManager's older procedural stage (plain colored UI rectangles).
+    /// <c>Assets/Resources/SoloVisuals/{KindName}.prefab</c> and it's picked
+    /// up automatically, no code changes needed. The prefab doesn't need any
+    /// script on it: if its root has a component implementing
+    /// <see cref="ISoloGameVisual"/> already, that's used as-is; otherwise,
+    /// for kinds with a known adapter (see <see cref="WrapPrefab"/>), one is
+    /// attached at runtime that finds the pieces it needs (camera, moving
+    /// parts) by name within the prefab's own hierarchy — so authoring a
+    /// prefab is purely an art/scene-building task, no C# required. Falls
+    /// back to a built-in placeholder for the kinds that have one; everything
+    /// else keeps using GameManager's older procedural stage (plain colored
+    /// UI rectangles).
     /// </summary>
     public static class SoloGameVisualFactory
     {
@@ -47,10 +53,10 @@ namespace JesBox.Game
             if (prefab != null)
             {
                 var instance = Object.Instantiate(prefab);
-                var visual = instance.GetComponent<ISoloGameVisual>();
+                var visual = instance.GetComponent<ISoloGameVisual>() ?? WrapPrefab(kind, instance);
                 if (visual != null) return visual;
 
-                Debug.LogWarning($"[JesBox] Resources/SoloVisuals/{kind} has no component implementing ISoloGameVisual — using the built-in placeholder instead.");
+                Debug.LogWarning($"[JesBox] Resources/SoloVisuals/{kind} has no component implementing ISoloGameVisual, and no built-in adapter recognizes this kind — using the built-in placeholder instead.");
                 Object.Destroy(instance);
             }
 
@@ -60,6 +66,22 @@ namespace JesBox.Game
                     return new GameObject($"{kind}Visual").AddComponent<JoyfulPrayerVisual>();
                 case SoloGameKind.PartingTheSea:
                     return new GameObject($"{kind}Visual").AddComponent<PartingTheSeaVisual>();
+                default:
+                    return null;
+            }
+        }
+
+        /// <summary>Attaches a kind-specific adapter directly onto an
+        /// already-instantiated, script-free prefab. Add a new case here
+        /// whenever you build a hand-authored scene for a kind that needs
+        /// more than JoyfulPrayerVisual/PartingTheSeaVisual's simple
+        /// "meter that fills" look.</summary>
+        private static ISoloGameVisual WrapPrefab(SoloGameKind kind, GameObject instance)
+        {
+            switch (kind)
+            {
+                case SoloGameKind.PartingTheSea:
+                    return instance.AddComponent<PartingTheSeaCustomVisual>();
                 default:
                     return null;
             }
@@ -282,6 +304,97 @@ namespace JesBox.Game
             float bob = Mathf.Sin(Time.time * 1.5f) * 0.08f;
             var lp = _leftWall.localPosition; lp.y = _leftBaseY + bob; _leftWall.localPosition = lp;
             var rp = _rightWall.localPosition; rp.y = _rightBaseY - bob; _rightWall.localPosition = rp;
+        }
+    }
+
+    /// <summary>
+    /// Adapter for a hand-authored SoloVisuals/PartingTheSea.prefab that has
+    /// no script of its own — SoloGameVisualFactory attaches this straight
+    /// onto the instantiated prefab at runtime. Finds a camera named
+    /// "RenderCam" and two objects named "WaterFront1"/"WaterFront2" anywhere
+    /// in the prefab's hierarchy; redirects the camera to a RenderTexture
+    /// (displayed via a RawImage on the stage, same as the placeholder) and
+    /// nudges the two water fronts apart as progress increases. Everything
+    /// else in the prefab (ground, sea surface, decoration, lighting) is
+    /// left exactly as authored. If "RenderCam" isn't found, nothing is
+    /// drawn — check the name matches exactly.
+    /// </summary>
+    public class PartingTheSeaCustomVisual : MonoBehaviour, ISoloGameVisual
+    {
+        private const int RenderWidth = 900;
+        private const int RenderHeight = 420;
+        private const float MaxSpread = 3f;
+
+        private Camera _camera;
+        private RenderTexture _renderTexture;
+        private RawImage _display;
+        private Transform _wallA, _wallB;
+        private Vector3 _wallABase, _wallBBase;
+
+        public void Setup(RectTransform stage)
+        {
+            _camera = FindDeep("RenderCam")?.GetComponent<Camera>();
+            _wallA = FindDeep("WaterFront1");
+            _wallB = FindDeep("WaterFront2");
+            if (_wallA != null) _wallABase = _wallA.localPosition;
+            if (_wallB != null) _wallBBase = _wallB.localPosition;
+
+            if (_camera == null)
+            {
+                Debug.LogWarning("[JesBox] SoloVisuals/PartingTheSea.prefab has no object named \"RenderCam\" with a Camera — nothing will be displayed for this turn.");
+                SetProgress(0f);
+                return;
+            }
+
+            // This prefab's camera comes with its own AudioListener (needed
+            // while authoring it standalone) — disable it here so it doesn't
+            // fight whatever listener is already live in the actual game scene.
+            var listener = _camera.GetComponent<AudioListener>();
+            if (listener != null) listener.enabled = false;
+
+            _renderTexture = new RenderTexture(RenderWidth, RenderHeight, 16) { name = "PartingTheSeaCustomRT" };
+            _camera.targetTexture = _renderTexture;
+
+            var displayGo = new GameObject("PartingTheSeaCustomDisplay", typeof(RawImage));
+            var displayRt = displayGo.GetComponent<RectTransform>();
+            displayRt.SetParent(stage, false);
+            displayRt.anchorMin = Vector2.zero;
+            displayRt.anchorMax = Vector2.one;
+            displayRt.offsetMin = Vector2.zero;
+            displayRt.offsetMax = Vector2.zero;
+            _display = displayGo.GetComponent<RawImage>();
+            _display.texture = _renderTexture;
+            _display.raycastTarget = false;
+
+            SetProgress(0f);
+        }
+
+        public void SetProgress(float fraction)
+        {
+            float spread = Mathf.Lerp(0f, MaxSpread, Mathf.Clamp01(fraction));
+            if (_wallA != null) _wallA.localPosition = _wallABase + new Vector3(-spread, 0f, 0f);
+            if (_wallB != null) _wallB.localPosition = _wallBBase + new Vector3(spread, 0f, 0f);
+        }
+
+        public void Teardown()
+        {
+            if (_camera != null) _camera.targetTexture = null;
+            if (_renderTexture != null)
+            {
+                _renderTexture.Release();
+                Destroy(_renderTexture);
+            }
+            if (_display != null) Destroy(_display.gameObject);
+            if (gameObject != null) Destroy(gameObject);
+        }
+
+        private Transform FindDeep(string objectName)
+        {
+            foreach (var t in GetComponentsInChildren<Transform>(true))
+            {
+                if (t.name == objectName) return t;
+            }
+            return null;
         }
     }
 }
