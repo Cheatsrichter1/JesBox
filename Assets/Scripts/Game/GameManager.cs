@@ -117,11 +117,16 @@ namespace JesBox.Game
         private const float SoloFurnaceSpawnGap = 0.25f;
 
         // David's Slingshot / Loaves and Fishes Multiply (one-shot moving-target games)
+        // and Miraculous Catch (one-shot approaching-target game) all share
+        // _soloTargetTime/_soloTargetX/_soloTargetMarker/SoloTargetHitTolerance —
+        // only how the target's position evolves each tick differs.
         private float _soloTargetTime;
         private float _soloTargetX;
         private RectTransform _soloTargetMarker;
         private const float SoloTargetAmplitude = 320f;
         private const float SoloTargetHitTolerance = 70f;
+        private const float SoloBallStartX = 700f;
+        private const float SoloBallTravelTime = 2.6f;
 
         // Joyful Prayer
         private int _soloPrayerCount;
@@ -1176,6 +1181,7 @@ namespace JesBox.Game
         {
             if (kind == SoloGameKind.FieryFurnaceDash) TickFurnaceDash(dt);
             else if (kind == SoloGameKind.DavidsSlingshot || kind == SoloGameKind.LoavesAndFishesMultiply) TickMovingTarget(dt);
+            else if (kind == SoloGameKind.MiraculousCatch) TickApproachingBall(dt);
         }
 
         private void TickFurnaceDash(float dt)
@@ -1242,6 +1248,20 @@ namespace JesBox.Game
                 _soloTargetMarker.anchoredPosition = new Vector2(_soloTargetX, 100f);
         }
 
+        /// <summary>Miraculous Catch: the ball swims in a straight line from
+        /// one side of the stage to the other — no oscillation — arriving at
+        /// the hit zone (X = 0) partway through SoloBallTravelTime and
+        /// continuing past it if nobody swings. Faster on later turns via
+        /// _soloIntensity, same as every other Chosen One game.</summary>
+        private void TickApproachingBall(float dt)
+        {
+            _soloTargetTime += dt * _soloIntensity;
+            float t = Mathf.Clamp01(_soloTargetTime / SoloBallTravelTime);
+            _soloTargetX = Mathf.Lerp(SoloBallStartX, -SoloBallStartX, t);
+            if (_soloTargetMarker != null)
+                _soloTargetMarker.anchoredPosition = new Vector2(_soloTargetX, 100f);
+        }
+
         private void HandleSoloMove(int direction)
         {
             if (direction == 0 || _soloRoundOver) return;
@@ -1279,7 +1299,8 @@ namespace JesBox.Game
         private void HandleSoloFire()
         {
             if (_soloRoundOver) return;
-            if (_currentSoloKind != SoloGameKind.DavidsSlingshot && _currentSoloKind != SoloGameKind.LoavesAndFishesMultiply) return;
+            if (_currentSoloKind != SoloGameKind.DavidsSlingshot && _currentSoloKind != SoloGameKind.LoavesAndFishesMultiply
+                && _currentSoloKind != SoloGameKind.MiraculousCatch) return;
 
             // One shot only — whatever happens here decides the round.
             bool hit = Mathf.Abs(_soloTargetX) <= SoloTargetHitTolerance;
@@ -1388,6 +1409,11 @@ namespace JesBox.Game
                     outcome = _soloWon
                         ? (de ? "vermehrte die Brote und Fische" : "multiplied the loaves and fishes")
                         : (de ? "vermasselte das Wunder" : "fumbled the miracle");
+                    break;
+                case SoloGameKind.MiraculousCatch:
+                    outcome = _soloWon
+                        ? (de ? "machte einen wunderbaren Fischzug" : "made a miraculous catch")
+                        : (de ? "verpasste den Fisch" : "missed the catch");
                     break;
                 default:
                     outcome = _soloWon
@@ -1976,6 +2002,39 @@ namespace JesBox.Game
                 markerGo.GetComponent<Image>().color = isSlingshot
                     ? new Color(0.55f, 0.2f, 0.2f, 0.95f)
                     : new Color(0.85f, 0.65f, 0.25f, 0.95f);
+            }
+            else if (kind == SoloGameKind.MiraculousCatch)
+            {
+                // Hit zone marks where the ball needs to be — centered, same
+                // width as SoloTargetHitTolerance's actual pass/fail check —
+                // so the room can see the window even though only the chosen
+                // player's phone controls the swing.
+                var zoneGo = new GameObject("HitZone", typeof(Image));
+                var zoneRt = zoneGo.GetComponent<RectTransform>();
+                zoneRt.SetParent(_soloStage, false);
+                zoneRt.anchorMin = new Vector2(0.5f, 0.5f);
+                zoneRt.anchorMax = new Vector2(0.5f, 0.5f);
+                zoneRt.anchoredPosition = new Vector2(0, 100);
+                zoneRt.sizeDelta = new Vector2(SoloTargetHitTolerance * 2, 220);
+                zoneGo.GetComponent<Image>().color = new Color(0.4f, 0.75f, 0.9f, 0.25f);
+
+                var racketGo = new GameObject("Racket", typeof(Image));
+                var racketRt = racketGo.GetComponent<RectTransform>();
+                racketRt.SetParent(_soloStage, false);
+                racketRt.anchorMin = new Vector2(0.5f, 0.5f);
+                racketRt.anchorMax = new Vector2(0.5f, 0.5f);
+                racketRt.anchoredPosition = new Vector2(0, 100);
+                racketRt.sizeDelta = new Vector2(24, 220);
+                racketGo.GetComponent<Image>().color = new Color(0.55f, 0.38f, 0.2f, 0.95f);
+
+                var ballGo = new GameObject("Ball", typeof(Image));
+                _soloTargetMarker = ballGo.GetComponent<RectTransform>();
+                _soloTargetMarker.SetParent(_soloStage, false);
+                _soloTargetMarker.anchorMin = new Vector2(0.5f, 0.5f);
+                _soloTargetMarker.anchorMax = new Vector2(0.5f, 0.5f);
+                _soloTargetMarker.anchoredPosition = new Vector2(SoloBallStartX, 100);
+                _soloTargetMarker.sizeDelta = new Vector2(70, 70);
+                ballGo.GetComponent<Image>().color = new Color(0.85f, 0.85f, 0.9f, 0.95f);
             }
             else if (kind == SoloGameKind.JoyfulPrayer || kind == SoloGameKind.PartingTheSea)
             {

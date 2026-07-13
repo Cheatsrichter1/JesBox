@@ -75,6 +75,60 @@ function ShakeController({ onShake }) {
   );
 }
 
+function SwingController({ onFire }) {
+  const { t } = useLanguage();
+  const [motionReady, setMotionReady] = useState(false);
+  const lastAccelRef = useRef(null);
+  const firedRef = useRef(false);
+  const permissionRequestedRef = useRef(false);
+
+  useEffect(() => {
+    const SWING_THRESHOLD = 20; // a full swing, not just a shake — tuned above ShakeController's
+
+    const handleMotion = (event) => {
+      if (firedRef.current) return;
+      const acc = event.accelerationIncludingGravity || event.acceleration;
+      if (!acc || acc.x == null) return;
+      const { x, y, z } = acc;
+      const last = lastAccelRef.current;
+      lastAccelRef.current = { x, y, z };
+      if (!last) return;
+      const delta = Math.abs(x - last.x) + Math.abs(y - last.y) + Math.abs(z - last.z);
+      if (delta > SWING_THRESHOLD) {
+        firedRef.current = true;
+        onFire();
+      }
+    };
+
+    window.addEventListener('devicemotion', handleMotion);
+    if (typeof DeviceMotionEvent === 'undefined' || typeof DeviceMotionEvent.requestPermission !== 'function') {
+      setMotionReady(true);
+    }
+
+    return () => window.removeEventListener('devicemotion', handleMotion);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const handlePress = () => {
+    if (firedRef.current) return;
+    firedRef.current = true;
+    onFire();
+    if (!permissionRequestedRef.current && typeof DeviceMotionEvent !== 'undefined' &&
+        typeof DeviceMotionEvent.requestPermission === 'function') {
+      permissionRequestedRef.current = true;
+      DeviceMotionEvent.requestPermission()
+        .then((result) => setMotionReady(result === 'granted'))
+        .catch(() => {});
+    }
+  };
+
+  return (
+    <button className="tap-button solo-fire-btn" onClick={handlePress}>
+      {motionReady ? t('solo.swingReady') : t('solo.swingNotReady')}
+    </button>
+  );
+}
+
 function TiltController({ onSteer }) {
   const { t } = useLanguage();
   const [steer, setSteer] = useState(0);
@@ -177,6 +231,7 @@ const CONTROLLERS = {
   DavidsSlingshot: FireController,
   LoavesAndFishesMultiply: FireController,
   JoyfulPrayer: ShakeController,
+  MiraculousCatch: SwingController,
 };
 
 export default function SoloTurnScreen({ game, playerId, onMove, onFire, onShake, onSteer }) {

@@ -8,7 +8,8 @@ namespace JesBox.Game
         DavidsSlingshot,
         JoyfulPrayer,
         LoavesAndFishesMultiply,
-        PartingTheSea
+        PartingTheSea,
+        MiraculousCatch
     }
 
     /// <summary>
@@ -69,6 +70,10 @@ namespace JesBox.Game
                 "Tilt your phone LEFT and RIGHT like a steering wheel — swing side to side to part the waters!",
                 "Kippe dein Handy wie ein Lenkrad nach LINKS und RECHTS — schwing hin und her, um das Wasser zu teilen!",
                 "SWING!", "SCHWING!", 7f),
+            new SoloGameDef(SoloGameKind.MiraculousCatch, "Miraculous Catch", "Der wunderbare Fischzug",
+                "A fish is swimming your way — SWING your phone like a net at the perfect moment to catch it!",
+                "Ein Fisch schwimmt auf dich zu — SCHWING dein Handy wie ein Netz im perfekten Moment, um ihn zu fangen!",
+                "CATCH!", "FANG!", 4f),
         };
     }
 }
