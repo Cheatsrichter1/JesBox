@@ -68,7 +68,7 @@ namespace JesBox.Game
             new SoloGameDef(SoloGameKind.PartingTheSea, "Parting the Sea", "Die Teilung des Meeres",
                 "Tilt your phone LEFT and RIGHT like a steering wheel — swing side to side to part the waters!",
                 "Kippe dein Handy wie ein Lenkrad nach LINKS und RECHTS — schwing hin und her, um das Wasser zu teilen!",
-                "GO!", "LOS!", 7f),
+                "SWING!", "SCHWING!", 7f),
         };
     }
 }

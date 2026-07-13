@@ -142,8 +142,8 @@ namespace JesBox.Game
         // Chosen One games fill nearly the whole screen, WarioWare-style —
         // the prompt/title only shows briefly at the start (SetSoloPromptVisible),
         // so there's no persistent header eating into the stage's space.
-        private static readonly Vector2 SoloStageDefaultSize = new Vector2(1850f, 850f);
-        private static readonly Vector2 SoloStageDefaultPos = new Vector2(0f, 75f);
+        private static readonly Vector2 SoloStageDefaultSize = new Vector2(1900f, 900f);
+        private static readonly Vector2 SoloStageDefaultPos = new Vector2(0f, 65f);
         private static readonly Vector2 SketchStageSize = new Vector2(900f, 480f);
         private static readonly Vector2 SketchStagePos = new Vector2(0f, -10f);
         private const float SketchGuessDuration = 10f;
@@ -550,6 +550,17 @@ namespace JesBox.Game
             _pauseButton.gameObject.SetActive(_gameRunning);
             _skipButton.gameObject.SetActive(_gameRunning);
             _endGameButton.gameObject.SetActive(_gameRunning);
+
+            // Kicking players is a game-selection-time concern (removing
+            // someone before you start) — hide it once a game is actually
+            // running instead of leaving it sitting over the fullscreen games.
+            _playersToggleButton.gameObject.SetActive(!_gameRunning);
+            if (_gameRunning && _playersOverlayOpen)
+            {
+                _playersOverlayOpen = false;
+                _playersOverlay.gameObject.SetActive(false);
+            }
+
             _pauseButtonLabel.text = _paused ? L.T("host.resume") : L.T("host.pause");
         }
 
