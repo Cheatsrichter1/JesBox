@@ -7,6 +7,7 @@ using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using UnityEngine;
 using UnityEngine.EventSystems;
+using UnityEngine.InputSystem;
 using UnityEngine.InputSystem.UI;
 using UnityEngine.Networking;
 using UnityEngine.UI;
@@ -216,6 +217,17 @@ namespace JesBox.Game
         private void Start()
         {
             _net.Connect(serverUrl);
+        }
+
+        private void Update()
+        {
+            // Esc opens/closes the admin menu (Pause/Skip/End Game/Players),
+            // which is otherwise hidden during actual gameplay so it doesn't
+            // clutter the now-fullscreen games — see UpdateHostControlsUI().
+            if (_gameRunning && Keyboard.current != null && Keyboard.current.escapeKey.wasPressedThisFrame)
+            {
+                TogglePause();
+            }
         }
 
         private static void EnsureEventSystem()
@@ -547,17 +559,22 @@ namespace JesBox.Game
             if (_playersOverlayOpen) RefreshPlayersOverlay();
         }
 
+        /// <summary>The whole admin menu (Pause/Skip/End Game/Players) is
+        /// hidden during actual gameplay — Esc (see Update()) is what reveals
+        /// it, pausing the game at the same time. It's also always visible in
+        /// the lobby, since Players (kicking) is a game-selection-time
+        /// concern. Pause/Skip/End Game specifically only make sense once
+        /// paused mid-game — there's nothing to skip/end from the lobby.</summary>
         private void UpdateHostControlsUI()
         {
-            _pauseButton.gameObject.SetActive(_gameRunning);
-            _skipButton.gameObject.SetActive(_gameRunning);
-            _endGameButton.gameObject.SetActive(_gameRunning);
+            bool pausedMidGame = _gameRunning && _paused;
+            _pauseButton.gameObject.SetActive(pausedMidGame);
+            _skipButton.gameObject.SetActive(pausedMidGame);
+            _endGameButton.gameObject.SetActive(pausedMidGame);
 
-            // Kicking players is a game-selection-time concern (removing
-            // someone before you start) — hide it once a game is actually
-            // running instead of leaving it sitting over the fullscreen games.
-            _playersToggleButton.gameObject.SetActive(!_gameRunning);
-            if (_gameRunning && _playersOverlayOpen)
+            bool adminMenuVisible = !_gameRunning || _paused;
+            _playersToggleButton.gameObject.SetActive(adminMenuVisible);
+            if (!adminMenuVisible && _playersOverlayOpen)
             {
                 _playersOverlayOpen = false;
                 _playersOverlay.gameObject.SetActive(false);
