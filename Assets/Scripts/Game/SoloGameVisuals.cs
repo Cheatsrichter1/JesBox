@@ -340,11 +340,11 @@ namespace JesBox.Game
     /// </summary>
     public class PartingTheSeaCustomVisual : MonoBehaviour, ISteerableSoloGameVisual
     {
-        // Matches PartingTheSeaStageSize in GameManager.cs — this game's
-        // stage is enlarged well past the default Chosen One size, so the
-        // render texture is upsized to match rather than look blurry stretched.
-        private const int RenderWidth = 1600;
-        private const int RenderHeight = 800;
+        // Matches SoloStageDefaultSize in GameManager.cs (Chosen One games
+        // now fill nearly the whole screen) — upsized to match rather than
+        // look blurry stretched.
+        private const int RenderWidth = 1850;
+        private const int RenderHeight = 850;
         // How far apart (world units) the water fronts end up at full
         // progress. Bumped up from the original 3 — at the authored camera
         // distance/FOV that was barely visible.

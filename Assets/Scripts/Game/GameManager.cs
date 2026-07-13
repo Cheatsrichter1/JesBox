@@ -139,14 +139,13 @@ namespace JesBox.Game
         // of RunSoloTurn and RunSketchTurn.
         private Vector2? _lastDrawPoint;
         private readonly List<RectTransform> _drawSegments = new List<RectTransform>();
-        private static readonly Vector2 SoloStageDefaultSize = new Vector2(900f, 420f);
-        private static readonly Vector2 SoloStageDefaultPos = new Vector2(0f, -40f);
+        // Chosen One games fill nearly the whole screen, WarioWare-style —
+        // the prompt/title only shows briefly at the start (SetSoloPromptVisible),
+        // so there's no persistent header eating into the stage's space.
+        private static readonly Vector2 SoloStageDefaultSize = new Vector2(1850f, 850f);
+        private static readonly Vector2 SoloStageDefaultPos = new Vector2(0f, 75f);
         private static readonly Vector2 SketchStageSize = new Vector2(900f, 480f);
         private static readonly Vector2 SketchStagePos = new Vector2(0f, -10f);
-        // Parting the Sea's diorama was hard to make out at the default
-        // Chosen One stage size — noticeably bigger so it actually reads.
-        private static readonly Vector2 PartingTheSeaStageSize = new Vector2(1600f, 800f);
-        private static readonly Vector2 PartingTheSeaStagePos = new Vector2(0f, -140f);
         private const float SketchGuessDuration = 10f;
         private const int SketchGuesserPoints = 500;
         private const int SketchArtistPointsPerGuesser = 150;
@@ -862,16 +861,8 @@ namespace JesBox.Game
             string chosenName = _players[chosenId].Name;
 
             ShowSoloTurnUI(def, chosenName, index, total);
-            if (def.Kind == SoloGameKind.PartingTheSea)
-            {
-                _soloStage.anchoredPosition = PartingTheSeaStagePos;
-                _soloStage.sizeDelta = PartingTheSeaStageSize;
-            }
-            else
-            {
-                _soloStage.anchoredPosition = SoloStageDefaultPos;
-                _soloStage.sizeDelta = SoloStageDefaultSize;
-            }
+            _soloStage.anchoredPosition = SoloStageDefaultPos;
+            _soloStage.sizeDelta = SoloStageDefaultSize;
             _soloStage.localScale = Vector3.one;
             SetupSoloStage(def.Kind);
 
@@ -879,6 +870,11 @@ namespace JesBox.Game
             // yet ticking, and the phone hasn't been told to start yet either,
             // so this doesn't cost the player any reaction time.
             yield return PlaySoloIntro(def);
+
+            // The prompt (title/instructions) only needs to be on screen for
+            // that intro beat — hide it now so the stage has the whole
+            // screen to itself while the round is actually playing.
+            SetSoloPromptVisible(false);
 
             BroadcastGame(new SoloTurnPayload
             {
@@ -1695,6 +1691,10 @@ namespace JesBox.Game
         private RectTransform BuildSoloPanel(Transform parent)
         {
             var panel = UIFactory.CreateFullStretchPanel(parent, "SoloPanel", Color.clear);
+
+            // The "X is up! <Game Title>" prompt — shown only briefly during
+            // PlaySoloIntro (see SetSoloPromptVisible), then hidden so the
+            // enlarged stage below has the whole screen to itself, WarioWare-style.
             _soloHeaderText = UIFactory.CreateText(panel, "", 32, UIFactory.Gold, TextAnchor.MiddleCenter,
                 new Vector2(0, 460), new Vector2(1000, 50));
             _soloChosenNameText = UIFactory.CreateText(panel, "", 46, UIFactory.Gold, TextAnchor.MiddleCenter,
@@ -1709,11 +1709,12 @@ namespace JesBox.Game
             _soloStage.SetParent(panel, false);
             _soloStage.anchorMin = new Vector2(0.5f, 0.5f);
             _soloStage.anchorMax = new Vector2(0.5f, 0.5f);
-            _soloStage.anchoredPosition = new Vector2(0, -40);
-            _soloStage.sizeDelta = new Vector2(900, 420);
+            _soloStage.anchoredPosition = SoloStageDefaultPos;
+            _soloStage.sizeDelta = SoloStageDefaultSize;
             stageGo.GetComponent<Image>().color = new Color(1f, 1f, 1f, 0.05f);
 
-            var (timerText, fill) = BuildTimerWidget(panel, -310);
+            // Sits right at the bottom edge of the screen, below the stage.
+            var (timerText, fill) = BuildTimerWidget(panel, -425);
             _soloTimerText = timerText;
             _soloTimerFill = fill;
 
@@ -1721,10 +1722,22 @@ namespace JesBox.Game
             // stamp ("✓"/"✗") — created after the stage so it renders on top,
             // hidden until PlaySoloIntro/PlaySoloStamp activates it.
             _soloVerbText = UIFactory.CreateText(panel, "", 120, UIFactory.Gold, TextAnchor.MiddleCenter,
-                new Vector2(0, -40), new Vector2(900, 300), FontStyle.Bold);
+                SoloStageDefaultPos, new Vector2(1200, 300), FontStyle.Bold);
             _soloVerbText.gameObject.SetActive(false);
 
             return panel;
+        }
+
+        /// <summary>Shows/hides the "Turn X/Y" / "Name is up!" / title / cheer
+        /// prompt — visible only for the brief intro beat before a Chosen One
+        /// round starts, then hidden so the (now much bigger) stage has the
+        /// whole screen to itself while the round is actually playing.</summary>
+        private void SetSoloPromptVisible(bool visible)
+        {
+            _soloHeaderText.gameObject.SetActive(visible);
+            _soloChosenNameText.gameObject.SetActive(visible);
+            _soloTitleText.gameObject.SetActive(visible);
+            _soloInstructionsText.gameObject.SetActive(visible);
         }
 
         private RectTransform BuildRevealPanel(Transform parent)
@@ -1818,6 +1831,7 @@ namespace JesBox.Game
         private void ShowSoloTurnUI(SoloGameDef def, string chosenName, int index, int total)
         {
             ShowOnly(_soloPanel);
+            SetSoloPromptVisible(true);
             _sound.PlayTick();
             _soloHeaderText.text = L.T("solo.header", index + 1, total);
             _soloChosenNameText.text = L.T("solo.isUp", chosenName);
@@ -1846,6 +1860,7 @@ namespace JesBox.Game
         private void ShowSketchDrawUI(string chosenName, int index, int total)
         {
             ShowOnly(_soloPanel);
+            SetSoloPromptVisible(true); // in case a prior Chosen One session left these hidden
             _sound.PlayTick();
             _soloHeaderText.text = L.T("sketch.header", index + 1, total);
             _soloChosenNameText.text = L.T("sketch.isDrawing", chosenName);
@@ -1864,6 +1879,7 @@ namespace JesBox.Game
         private void ShowCharadeTurnUI(string chosenName, CharadeType type, int index, int total)
         {
             ShowOnly(_soloPanel);
+            SetSoloPromptVisible(true); // in case a prior Chosen One session left these hidden
             _sound.PlayTick();
             _soloHeaderText.text = L.T("charade.header", index + 1, total);
             _soloChosenNameText.text = L.T("solo.isUp", chosenName);
