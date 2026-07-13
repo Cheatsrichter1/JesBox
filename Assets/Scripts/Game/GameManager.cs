@@ -139,11 +139,13 @@ namespace JesBox.Game
         // of RunSoloTurn and RunSketchTurn.
         private Vector2? _lastDrawPoint;
         private readonly List<RectTransform> _drawSegments = new List<RectTransform>();
-        // Chosen One games fill nearly the whole screen, WarioWare-style —
-        // the prompt/title only shows briefly at the start (SetSoloPromptVisible),
-        // so there's no persistent header eating into the stage's space.
-        private static readonly Vector2 SoloStageDefaultSize = new Vector2(1900f, 900f);
-        private static readonly Vector2 SoloStageDefaultPos = new Vector2(0f, 65f);
+        // Chosen One games fill almost the entire 1920x1080 canvas,
+        // WarioWare-style — the prompt/title only shows briefly at the start
+        // (SetSoloPromptVisible), and the timer (added after the stage, so it
+        // always renders on top) sits right at the bottom edge as a HUD
+        // overlay rather than in its own reserved strip.
+        private static readonly Vector2 SoloStageDefaultSize = new Vector2(1910f, 1060f);
+        private static readonly Vector2 SoloStageDefaultPos = new Vector2(0f, 0f);
         private static readonly Vector2 SketchStageSize = new Vector2(900f, 480f);
         private static readonly Vector2 SketchStagePos = new Vector2(0f, -10f);
         private const float SketchGuessDuration = 10f;

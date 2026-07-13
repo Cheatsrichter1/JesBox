@@ -343,8 +343,8 @@ namespace JesBox.Game
         // Matches SoloStageDefaultSize in GameManager.cs (Chosen One games
         // now fill nearly the whole screen) — upsized to match rather than
         // look blurry stretched.
-        private const int RenderWidth = 1900;
-        private const int RenderHeight = 900;
+        private const int RenderWidth = 1910;
+        private const int RenderHeight = 1060;
         // How far apart (world units) the water fronts end up at full
         // progress. Bumped up from the original 3 — at the authored camera
         // distance/FOV that was barely visible.
