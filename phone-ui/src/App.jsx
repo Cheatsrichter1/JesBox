@@ -4,7 +4,6 @@ import LobbyScreen from './components/LobbyScreen.jsx';
 import QuestionScreen from './components/QuestionScreen.jsx';
 import RevealScreen from './components/RevealScreen.jsx';
 import FinalScreen from './components/FinalScreen.jsx';
-import MicrogameScreen from './components/MicrogameScreen.jsx';
 import RoundRevealScreen from './components/RoundRevealScreen.jsx';
 import VotePromptScreen from './components/VotePromptScreen.jsx';
 import VoteRevealScreen from './components/VoteRevealScreen.jsx';
@@ -59,8 +58,8 @@ const RECONNECT_BASE_DELAY_MS = 1000;
 function AppInner() {
   const { t } = useLanguage();
 
-  // 'join' | 'connecting' | 'lobby' | 'question' | 'reveal' | 'microgame' |
-  // 'microgame_reveal' | 'vote_prompt' | 'vote_reveal' | 'solo_turn' |
+  // 'join' | 'connecting' | 'lobby' | 'question' | 'reveal' |
+  // 'vote_prompt' | 'vote_reveal' | 'solo_turn' |
   // 'solo_reveal' | 'sketch_draw' | 'sketch_guess' | 'charade_turn' |
   // 'charade_guess' | 'final'
   const [screen, setScreen] = useState('join');
@@ -267,14 +266,6 @@ function AppInner() {
     sendAction({ action: 'vote', choice: choiceIndex });
   }, [selectedChoice, sendAction]);
 
-  const tap = useCallback(() => {
-    sendAction({ action: 'tap' });
-  }, [sendAction]);
-
-  const submitScore = useCallback((value) => {
-    sendAction({ action: 'submit_score', value });
-  }, [sendAction]);
-
   const move = useCallback((direction) => {
     sendAction({ action: 'move', choice: direction });
   }, [sendAction]);
@@ -317,12 +308,6 @@ function AppInner() {
       break;
     case 'reveal':
       content = <RevealScreen game={game} playerId={playerId} selectedChoice={selectedChoice} />;
-      break;
-    case 'microgame':
-      content = <MicrogameScreen game={game} onTap={tap} onSubmitScore={submitScore} />;
-      break;
-    case 'microgame_reveal':
-      content = <RoundRevealScreen game={game} playerId={playerId} />;
       break;
     case 'vote_prompt':
       content = <VotePromptScreen game={game} selectedChoice={selectedChoice} onVote={vote} />;

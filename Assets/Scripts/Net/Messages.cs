@@ -144,25 +144,6 @@ namespace JesBox.Net
         public List<PlayerPublic> players;
     }
 
-    // Microgames
-    public class MicrogamePayload
-    {
-        public string phase = "microgame";
-        public int index;
-        public int total;
-        public string kind;
-        public string title;
-        public string instructions;
-        public float duration;
-    }
-
-    public class MicrogameRevealPayload
-    {
-        public string phase = "microgame_reveal";
-        public string title;
-        public List<PlayerPublic> players;
-    }
-
     // Prompt & Vote
     public class VotePromptPayload
     {

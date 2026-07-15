@@ -1,3 +1,12 @@
+// The Microgames game mode was cut and this screen is no longer imported by
+// App.jsx. Kept here in case it's ever brought back — see also
+// Assets/Scripts/Legacy/Microgames.cs (the TV-side content bank) and
+// Assets/Scripts/Legacy/LegacyMicrogameMessages.cs (the payload shapes).
+// Reviving it needs: the `microgame.*` i18n keys (removed from i18n.jsx —
+// check git history) and the `fishers-*`/`water-*`/`loaves-*`/`parting-*`/
+// `flash-good`/`flash-bad` CSS classes (removed from index.css) restored,
+// plus GameManager.cs's Microgames mode/coroutines/UI restored on the Unity
+// side, and App.jsx wired back up to import and render this component.
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useLanguage } from '../i18n.jsx';
 

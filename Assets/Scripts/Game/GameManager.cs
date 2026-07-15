@@ -30,7 +30,7 @@ namespace JesBox.Game
         [SerializeField] private int questionsPerGame = 5;
         [SerializeField] private float revealDuration = 5f;
 
-        private enum GameMode { Trivia, Microgames, PromptVote, ChosenOne, Sketch, Charades }
+        private enum GameMode { Trivia, PromptVote, ChosenOne, Sketch, Charades }
         private enum CharadeType { Act, Describe }
 
         private class PlayerState
@@ -51,8 +51,6 @@ namespace JesBox.Game
         private NetworkClient _net;
         private readonly Dictionary<string, PlayerState> _players = new Dictionary<string, PlayerState>();
         private readonly Dictionary<string, Answer> _answersThisRound = new Dictionary<string, Answer>();
-        private readonly Dictionary<string, int> _tapCounts = new Dictionary<string, int>();
-        private readonly Dictionary<string, int> _submittedScores = new Dictionary<string, int>();
         private readonly Dictionary<string, int> _votesThisRound = new Dictionary<string, int>();
         private string _roomCode = "----";
         private bool _gameRunning;
@@ -77,7 +75,6 @@ namespace JesBox.Game
         // Host-selected settings
         private GameMode _selectedMode = GameMode.Trivia;
         private Difficulty _selectedDifficulty = Difficulty.Medium;
-        private int _microgameRounds = 4;
         private int _votePromptCount = 5;
         private int _soloTurns = 6;
         private int _sketchRounds = 5;
@@ -175,8 +172,8 @@ namespace JesBox.Game
 
         // UI references
         private Transform _canvasRoot;
-        private RectTransform _lobbyPanel, _questionPanel, _microgamePanel, _revealPanel, _finalPanel, _soloPanel;
-        private RectTransform _triviaSettingsGroup, _microgameSettingsGroup, _voteSettingsGroup, _soloSettingsGroup, _sketchSettingsGroup, _charadeSettingsGroup;
+        private RectTransform _lobbyPanel, _questionPanel, _revealPanel, _finalPanel, _soloPanel;
+        private RectTransform _triviaSettingsGroup, _voteSettingsGroup, _soloSettingsGroup, _sketchSettingsGroup, _charadeSettingsGroup;
         private Text _lobbyCodeText, _lobbyPlayersText;
         private Button _startButton;
         private Dictionary<int, Button> _modeChips;
@@ -186,8 +183,6 @@ namespace JesBox.Game
         private Texture2D _qrTexture;
         private Text _questionHeaderText, _questionBodyText, _questionChoicesText, _questionTimerText;
         private Image _questionTimerFill;
-        private Text _microgameHeaderText, _microgameTitleText, _microgameInstructionsText, _microgameTimerText;
-        private Image _microgameTimerFill;
         private Text _revealBannerText, _revealScoresText;
         private Text _finalScoresText;
         private Button _backToMenuButton;
@@ -361,13 +356,6 @@ namespace JesBox.Game
                             if (!_answersThisRound.ContainsKey(game.playerId))
                                 _answersThisRound[game.playerId] = new Answer { Choice = game.data.choice, RemainingTime = _currentRemaining };
                             break;
-                        case "tap":
-                            _tapCounts.TryGetValue(game.playerId, out var taps);
-                            _tapCounts[game.playerId] = taps + 1;
-                            break;
-                        case "submit_score":
-                            _submittedScores[game.playerId] = game.data.value;
-                            break;
                         case "vote":
                             if (!_votesThisRound.ContainsKey(game.playerId))
                                 _votesThisRound[game.playerId] = game.data.choice;
@@ -487,7 +475,6 @@ namespace JesBox.Game
             switch (_selectedMode)
             {
                 case GameMode.Trivia: StartCoroutine(RunTriviaGame()); break;
-                case GameMode.Microgames: StartCoroutine(RunMicrogames()); break;
                 case GameMode.PromptVote: StartCoroutine(RunPromptVote()); break;
                 case GameMode.ChosenOne: StartCoroutine(RunChosenOne()); break;
                 case GameMode.Sketch: StartCoroutine(RunSketchGame()); break;
@@ -501,8 +488,6 @@ namespace JesBox.Game
             _gameRunning = false;
             _paused = false;
             _answersThisRound.Clear();
-            _tapCounts.Clear();
-            _submittedScores.Clear();
             _votesThisRound.Clear();
             _currentChosenId = null;
             _inSketchTurn = false;
@@ -656,85 +641,6 @@ namespace JesBox.Game
             ShowRevealUI(L.T("question.correctAnswer", letters[q.CorrectIndex], q.Choices[q.CorrectIndex]), publicList);
 
             yield return new WaitForSeconds(revealDuration);
-        }
-
-        // ---- Game flow: Microgames ----
-
-        private IEnumerator RunMicrogames()
-        {
-            var defs = new List<MicrogameDef>(Microgames.All);
-            Shuffle(defs);
-
-            for (int i = 0; i < _microgameRounds && !_endGameRequested; i++)
-            {
-                yield return RunMicrogameRound(defs[i % defs.Count], i, _microgameRounds);
-            }
-
-            FinishGame();
-        }
-
-        private IEnumerator RunMicrogameRound(MicrogameDef def, int index, int total)
-        {
-            _tapCounts.Clear();
-            _submittedScores.Clear();
-            _currentRemaining = def.Duration;
-
-            BroadcastGame(new MicrogamePayload
-            {
-                index = index,
-                total = total,
-                kind = def.Kind.ToString(),
-                title = def.Title,
-                instructions = def.Instructions,
-                duration = def.Duration
-            });
-            ShowMicrogameUI(def, index, total);
-
-            float elapsed = 0f;
-            while (elapsed < def.Duration && !_skipRequested)
-            {
-                elapsed += Dt();
-                _currentRemaining = Mathf.Max(0f, def.Duration - elapsed);
-                UpdateMicrogameTimerUI(def.Duration);
-                yield return null;
-            }
-            _skipRequested = false;
-
-            // Small grace period for last-moment "submit_score" messages to arrive.
-            yield return new WaitForSeconds(0.4f);
-
-            int[] rankPoints = { 500, 350, 250, 150 };
-            var ranked = _players.Keys
-                .Select(id => new { id, raw = RawMicrogameScore(def, id) })
-                .OrderByDescending(x => x.raw)
-                .ToList();
-
-            var deltas = new Dictionary<string, int>();
-            for (int i = 0; i < ranked.Count; i++)
-            {
-                int points = ranked[i].raw > 0 ? rankPoints[Mathf.Min(i, rankPoints.Length - 1)] : 0;
-                deltas[ranked[i].id] = points;
-                _players[ranked[i].id].Score += points;
-            }
-
-            var publicList = PublicList(deltas);
-            string microResultText = L.T("microgame.results", def.Title);
-            BroadcastGame(new MicrogameRevealPayload { title = microResultText, players = publicList });
-            ShowRevealUI(microResultText, publicList);
-
-            yield return new WaitForSeconds(revealDuration);
-        }
-
-        private int RawMicrogameScore(MicrogameDef def, string playerId)
-        {
-            if (def.UsesTapCounting)
-            {
-                _tapCounts.TryGetValue(playerId, out var taps);
-                return taps;
-            }
-
-            _submittedScores.TryGetValue(playerId, out var score);
-            return score;
         }
 
         // ---- Game flow: Prompt & Vote ----
@@ -1436,7 +1342,6 @@ namespace JesBox.Game
 
             _lobbyPanel = BuildLobbyPanel(_canvasRoot);
             _questionPanel = BuildQuestionPanel(_canvasRoot);
-            _microgamePanel = BuildMicrogamePanel(_canvasRoot);
             _soloPanel = BuildSoloPanel(_canvasRoot);
             _revealPanel = BuildRevealPanel(_canvasRoot);
             _finalPanel = BuildFinalPanel(_canvasRoot);
@@ -1584,11 +1489,10 @@ namespace JesBox.Game
 
             UIFactory.CreateText(panel, L.T("lobby.gameMode"), 18, UIFactory.Gold, TextAnchor.MiddleCenter,
                 new Vector2(0, 335), new Vector2(400, 26));
-            _modeChips = BuildChipRow(panel, new[] { L.T("mode.trivia"), L.T("mode.microgames"), L.T("mode.promptVote"), L.T("mode.chosenOne"), L.T("mode.sketch"), L.T("mode.charades") },
+            _modeChips = BuildChipRow(panel, new[] { L.T("mode.trivia"), L.T("mode.promptVote"), L.T("mode.chosenOne"), L.T("mode.sketch"), L.T("mode.charades") },
                 new Vector2(0, 288), 190, 64, 10, idx => SelectMode((GameMode)idx));
 
             _triviaSettingsGroup = BuildTriviaSettingsGroup(panel, 195);
-            _microgameSettingsGroup = BuildRoundsSettingsGroup(panel, 195, L.T("stepper.microgameRounds"), 2, 8, 1, _microgameRounds, v => _microgameRounds = v);
             _voteSettingsGroup = BuildRoundsSettingsGroup(panel, 195, L.T("stepper.votePrompts"), 2, VotePrompts.All.Count, 1, _votePromptCount, v => _votePromptCount = v);
             _soloSettingsGroup = BuildRoundsSettingsGroup(panel, 195, L.T("stepper.turns"), 2, 12, 1, _soloTurns, v => _soloTurns = v);
             _sketchSettingsGroup = BuildRoundsSettingsGroup(panel, 195, L.T("stepper.sketchRounds"), 2, 10, 1, _sketchRounds, v => _sketchRounds = v);
@@ -1667,7 +1571,6 @@ namespace JesBox.Game
             _selectedMode = mode;
             HighlightChips(_modeChips, (int)mode);
             _triviaSettingsGroup.gameObject.SetActive(mode == GameMode.Trivia);
-            _microgameSettingsGroup.gameObject.SetActive(mode == GameMode.Microgames);
             _voteSettingsGroup.gameObject.SetActive(mode == GameMode.PromptVote);
             _soloSettingsGroup.gameObject.SetActive(mode == GameMode.ChosenOne);
             _sketchSettingsGroup.gameObject.SetActive(mode == GameMode.Sketch);
@@ -1727,22 +1630,6 @@ namespace JesBox.Game
             return panel;
         }
 
-        private RectTransform BuildMicrogamePanel(Transform parent)
-        {
-            var panel = UIFactory.CreateFullStretchPanel(parent, "MicrogamePanel", Color.clear);
-            _microgameHeaderText = UIFactory.CreateText(panel, "", 36, UIFactory.Gold, TextAnchor.MiddleCenter,
-                new Vector2(0, 420), new Vector2(1000, 60));
-            _microgameTitleText = UIFactory.CreateText(panel, "", 64, UIFactory.Cream, TextAnchor.MiddleCenter,
-                new Vector2(0, 260), new Vector2(1500, 120), FontStyle.Bold);
-            _microgameInstructionsText = UIFactory.CreateText(panel, "", 34, UIFactory.Cream, TextAnchor.MiddleCenter,
-                new Vector2(0, 100), new Vector2(1300, 160));
-
-            var (timerText, fill) = BuildTimerWidget(panel, -280);
-            _microgameTimerText = timerText;
-            _microgameTimerFill = fill;
-
-            return panel;
-        }
 
         private RectTransform BuildSoloPanel(Transform parent)
         {
@@ -1824,7 +1711,6 @@ namespace JesBox.Game
         {
             _lobbyPanel.gameObject.SetActive(panel == _lobbyPanel);
             _questionPanel.gameObject.SetActive(panel == _questionPanel);
-            _microgamePanel.gameObject.SetActive(panel == _microgamePanel);
             _soloPanel.gameObject.SetActive(panel == _soloPanel);
             _revealPanel.gameObject.SetActive(panel == _revealPanel);
             _finalPanel.gameObject.SetActive(panel == _finalPanel);
@@ -1868,21 +1754,6 @@ namespace JesBox.Game
             MaybeBeepCountdown();
         }
 
-        private void ShowMicrogameUI(MicrogameDef def, int index, int total)
-        {
-            ShowOnly(_microgamePanel);
-            _sound.PlayTick();
-            _microgameHeaderText.text = L.T("microgame.header", index + 1, total);
-            _microgameTitleText.text = def.Title;
-            _microgameInstructionsText.text = def.Instructions;
-        }
-
-        private void UpdateMicrogameTimerUI(float duration)
-        {
-            _microgameTimerText.text = Mathf.CeilToInt(_currentRemaining).ToString();
-            if (_microgameTimerFill != null)
-                _microgameTimerFill.fillAmount = duration <= 0 ? 0 : _currentRemaining / duration;
-        }
 
         private void ShowSoloTurnUI(SoloGameDef def, string chosenName, int index, int total)
         {

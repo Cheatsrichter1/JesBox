@@ -9,8 +9,8 @@ namespace JesBox.Game
     }
 
     /// <summary>
-    /// TV-side (Unity) UI chrome strings. Content banks (trivia, microgames,
-    /// vote prompts, solo games, draw prompts) carry their own English/German
+    /// TV-side (Unity) UI chrome strings. Content banks (trivia, vote
+    /// prompts, solo games, draw prompts) carry their own English/German
     /// pairs directly and pick based on <see cref="Current"/> — this class is
     /// only for the fixed labels GameManager builds the lobby/panels out of.
     /// </summary>
@@ -40,7 +40,6 @@ namespace JesBox.Game
             ["host.endGame"] = new[] { "End Game", "Spiel beenden" },
 
             ["mode.trivia"] = new[] { "Trivia Quiz", "Bibel-Quiz" },
-            ["mode.microgames"] = new[] { "Microgames", "Minispiele" },
             ["mode.promptVote"] = new[] { "Prompt & Vote", "Abstimmung" },
             ["mode.chosenOne"] = new[] { "Chosen One", "Auserwählter" },
             ["mode.sketch"] = new[] { "Sketch & Guess", "Zeichnen & Raten" },
@@ -53,7 +52,6 @@ namespace JesBox.Game
 
             ["stepper.questions"] = new[] { "Questions", "Fragen" },
             ["stepper.timeLimit"] = new[] { "Time Limit", "Zeitlimit" },
-            ["stepper.microgameRounds"] = new[] { "Microgame Rounds", "Minispiel-Runden" },
             ["stepper.votePrompts"] = new[] { "Vote Prompts", "Abstimmungen" },
             ["stepper.turns"] = new[] { "Turns", "Runden" },
             ["stepper.sketchRounds"] = new[] { "Sketch Rounds", "Zeichenrunden" },
@@ -68,9 +66,6 @@ namespace JesBox.Game
             ["vote.header"] = new[] { "Vote! Prompt {0} / {1}", "Abstimmen! Vorgabe {0} / {1}" },
             ["vote.crowdFavorite"] = new[] { "Crowd favorite: {0}) {1}", "Publikumsliebling: {0}) {1}" },
             ["vote.noVotes"] = new[] { "No votes cast!", "Keine Stimmen abgegeben!" },
-
-            ["microgame.header"] = new[] { "Microgame {0} / {1}", "Minispiel {0} / {1}" },
-            ["microgame.results"] = new[] { "{0} — Results!", "{0} — Ergebnisse!" },
 
             ["solo.header"] = new[] { "Chosen One — Turn {0} / {1}", "Auserwählter — Runde {0} / {1}" },
             ["solo.isUp"] = new[] { "{0} is up!", "{0} ist dran!" },

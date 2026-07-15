@@ -45,15 +45,6 @@ const translations = {
     'voteReveal.crowdFavorite': 'Crowd favorite: {letter}',
     'voteReveal.noVotes': 'No votes cast!',
 
-    'microgame.header': 'Microgame {n} / {total}',
-    'microgame.gathered': '{n} gathered',
-    'microgame.tap': 'TAP!',
-    'microgame.score': 'Score: {n}',
-    'microgame.shakes': '{n} shakes',
-    'microgame.tapOrShake': 'TAP (or shake)!',
-    'microgame.multiply': 'MULTIPLY!',
-    'microgame.swipes': '{n} swipes',
-
     'solo.header': 'Chosen One — Turn {n} / {total}',
     'solo.turnAnnounce': "{name}'s turn!",
     'solo.watchCheer': "Look up at the screen and cheer them on — you're up soon!",
@@ -135,15 +126,6 @@ const translations = {
     'vote.locked': 'Stimme gesperrt — warte auf die anderen...',
     'voteReveal.crowdFavorite': 'Publikumsliebling: {letter}',
     'voteReveal.noVotes': 'Keine Stimmen abgegeben!',
-
-    'microgame.header': 'Minispiel {n} / {total}',
-    'microgame.gathered': '{n} gesammelt',
-    'microgame.tap': 'TIPPEN!',
-    'microgame.score': 'Punkte: {n}',
-    'microgame.shakes': '{n} mal geschüttelt',
-    'microgame.tapOrShake': 'TIPPEN (oder schütteln)!',
-    'microgame.multiply': 'VERMEHREN!',
-    'microgame.swipes': '{n} Wischer',
 
     'solo.header': 'Auserwählter — Runde {n} / {total}',
     'solo.turnAnnounce': '{name} ist dran!',
